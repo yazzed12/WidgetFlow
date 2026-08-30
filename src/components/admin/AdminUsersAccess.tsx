@@ -1,0 +1,231 @@
+import React, { useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Edit3, UserPlus, Users, X, XCircle } from 'lucide-react';
+import { useSystemConfig } from '../../context/SystemConfigContext';
+import { apiService } from '../../services/apiService';
+import type { EmploymentStatus, OrganizationalRole, User } from '../../types';
+import { AdminInfoTooltip } from './AdminInfoTooltip';
+
+type UserEditor = { name: string; email: string; department: string; roleId: string; status: EmploymentStatus };
+
+const STATUSES: EmploymentStatus[] = ['Active', 'Inactive', 'Resigned', 'Terminated'];
+
+export const AdminUsersAccess: React.FC = () => {
+  const { createAdminUser, updateAdminUser } = useSystemConfig();
+  const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<OrganizationalRole[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editor, setEditor] = useState<UserEditor | null>(null);
+  const [confirmHighImpact, setConfirmHighImpact] = useState(false);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserRoleId, setNewUserRoleId] = useState('role-employee');
+  const [newUserDept, setNewUserDept] = useState('Operations');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      setPageError(null);
+      const [data, assignableRoles] = await Promise.all([apiService.getAdminUsers(), apiService.getAssignableRoles()]);
+      setUsers(Array.isArray(data) ? data : []);
+      setRoles(Array.isArray(assignableRoles) ? assignableRoles : []);
+    } catch (err: any) {
+      console.error('Failed to fetch admin users:', err);
+      setPageError(err.message || 'Unable to load company user directory.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchUsers();
+  }, []);
+
+  const openEditor = (user: User) => {
+    if (user.roleKey === 'admin' && user.roleType === 'System' && user.roleProtected) return;
+    setEditingUser(user);
+    setEditor({
+      name: user.name,
+      email: user.email,
+      department: user.department,
+      roleId: user.roleId || '',
+      status: user.status || 'Active',
+    });
+    setModalError(null);
+    setConfirmHighImpact(false);
+  };
+
+  const persistEditor = async () => {
+    if (!editingUser || !editor) return;
+    try {
+      setIsSubmitting(true);
+      setModalError(null);
+      await updateAdminUser(editingUser.id, editor);
+      await fetchUsers();
+      setEditingUser(null);
+      setEditor(null);
+      setConfirmHighImpact(false);
+    } catch (err: any) {
+      setModalError(err.message || 'Unable to save user changes.');
+      setConfirmHighImpact(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const requestSave = () => {
+    if (!editingUser || !editor) return;
+    if (!editor.name.trim() || !editor.email.trim() || !editor.department.trim()) {
+      setModalError('Name, email, and department are required.');
+      return;
+    }
+    const isEnteringHighImpact = editor.status !== editingUser.status && (editor.status === 'Resigned' || editor.status === 'Terminated');
+    if (isEnteringHighImpact) {
+      setConfirmHighImpact(true);
+      return;
+    }
+    void persistEditor();
+  };
+
+  const handleCreateUserSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!newUserName.trim() || !newUserEmail.trim() || !newUserDept.trim()) {
+      setModalError('Name, email, and department are required.');
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      setModalError(null);
+      await createAdminUser({ name: newUserName.trim(), email: newUserEmail.trim(), roleId: newUserRoleId, department: newUserDept.trim() });
+      await fetchUsers();
+      setShowAddUserModal(false);
+      setNewUserName('');
+      setNewUserEmail('');
+    } catch (err: any) {
+      setModalError(err.message || 'Unable to create user.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const statusClass = (status: EmploymentStatus) => status === 'Active'
+    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+    : status === 'Inactive'
+    ? 'text-slate-700 bg-slate-100 border-slate-200'
+    : status === 'Resigned'
+    ? 'text-amber-700 bg-amber-50 border-amber-200'
+    : 'text-rose-700 bg-rose-50 border-rose-200';
+
+  return (
+    <div className="space-y-6 animate-fade-in p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+        <div>
+          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-purple-600" /><h2 className="text-xl font-black tracking-tight text-slate-900">Users & Access Management</h2></div>
+          <p className="text-xs text-slate-500 font-medium pt-1">Manage company identities, operational roles, departments, and employment status.</p>
+        </div>
+        <button type="button" onClick={() => { setModalError(null); setShowAddUserModal(true); }} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"><UserPlus className="w-4 h-4" /><span>Add User</span></button>
+      </div>
+
+      {pageError ? (
+        <div className="p-8 text-center bg-rose-50 border border-rose-200 rounded-2xl space-y-3"><p className="text-sm font-bold text-rose-900">{pageError}</p><button onClick={() => void fetchUsers()} className="px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-xl cursor-pointer">Retry Loading Users</button></div>
+      ) : loading ? (
+        <div className="p-12 text-center text-xs text-slate-400">Loading user directory...</div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th className="py-3.5 px-4">User Name</th>
+                  <th className="py-3.5 px-4">Role</th>
+                  <th className="py-3.5 px-4">Department</th>
+                  <th className="py-3.5 px-4">Email</th>
+                  <th className="py-3.5 px-4">
+                    <div className="flex items-center gap-1">
+                      <span>Status</span>
+                      <AdminInfoTooltip
+                        title="Employment Status"
+                        description="Controls user operational availability for new workflow assignments. Inactive, Resigned, or Terminated users cannot log in or be assigned new reviews, but all historical records remain preserved."
+                        whoItAffects="The selected user account."
+                      />
+                    </div>
+                  </th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map((user) => {
+                  const status = user.status || 'Active';
+                  const isAdmin = user.roleKey === 'admin' && user.roleType === 'System' && user.roleProtected;
+                  return (
+                    <tr key={user.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4"><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-lg ${user.avatarBg || 'bg-indigo-600'} text-white font-bold flex items-center justify-center text-xs`}>{user.avatarInitials || user.name.substring(0, 2).toUpperCase()}</div><div><div className="font-extrabold text-slate-900">{user.name}</div><div className="text-[10px] font-mono text-slate-400">{user.id}</div></div></div></td>
+                      <td className="py-3.5 px-4"><span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-800 border border-indigo-200">{user.role}</span></td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-700">{user.department}</td>
+                      <td className="py-3.5 px-4 text-slate-500 font-mono">{user.email}</td>
+                      <td className="py-3.5 px-4"><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-bold ${statusClass(status)}`}>{status === 'Active' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}{status}</span></td>
+                      <td className="py-3.5 px-4 text-right">{isAdmin ? <span className="text-[10px] text-slate-400 font-semibold italic">System Protected</span> : <button type="button" onClick={() => openEditor(user)} className="inline-flex items-center gap-1 px-3 py-1 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg font-bold text-xs cursor-pointer"><Edit3 className="w-3.5 h-3.5" />Edit User</button>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {editingUser && editor && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3"><div><h3 className="text-sm font-extrabold text-slate-900">Edit User</h3><p className="text-xs text-slate-500">Role controls responsibility. Status controls future availability.</p></div><button type="button" onClick={() => { setEditingUser(null); setEditor(null); }} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button></div>
+            {modalError && <div className="p-3 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold">{modalError}</div>}
+            <div className="space-y-4 text-xs">
+              <label className="block space-y-1"><span className="font-bold text-slate-700">Name</span><input value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" /></label>
+              <label className="block space-y-1"><span className="font-bold text-slate-700">Email</span><input type="email" value={editor.email} onChange={(event) => setEditor({ ...editor, email: event.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" /></label>
+              <label className="block space-y-1"><span className="font-bold text-slate-700">Department</span><input value={editor.department} onChange={(event) => setEditor({ ...editor, department: event.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300" /></label>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block space-y-1"><span className="font-bold text-slate-700">Role</span><select value={editor.roleId} onChange={(event) => setEditor({ ...editor, roleId: event.target.value })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
+                <label className="block space-y-1">
+                  <div className="flex items-center gap-1">
+                    <span className="font-bold text-slate-700">Status</span>
+                    <AdminInfoTooltip
+                      title="Employment Status"
+                      description="Active: Available for assignments. Inactive/Resigned/Terminated: Removes user from new assignments while preserving historical activity."
+                    />
+                  </div>
+                  <select value={editor.status} onChange={(event) => setEditor({ ...editor, status: event.target.value as EmploymentStatus })} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">{STATUSES.map((status) => <option key={status}>{status}</option>)}</select>
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100"><button type="button" onClick={() => { setEditingUser(null); setEditor(null); }} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Cancel</button><button type="button" onClick={requestSave} disabled={isSubmitting} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl cursor-pointer disabled:opacity-50">{isSubmitting ? 'Saving...' : 'Save Changes'}</button></div>
+          </div>
+        </div>
+      )}
+
+      {confirmHighImpact && editingUser && editor && (
+        <div className="fixed inset-0 z-[60] bg-slate-950/75 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4"><div className="flex items-center gap-3"><div className="p-2.5 bg-amber-100 text-amber-700 rounded-2xl"><AlertTriangle className="w-6 h-6" /></div><div><h3 className="text-base font-extrabold text-slate-900">Mark {editingUser.name} as {editor.status}?</h3><p className="text-xs text-slate-500">Confirm employment-status change</p></div></div><p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3.5 rounded-2xl border border-slate-200">This user will no longer be available for new workflow assignments. Historical reports, approvals, signatures, and audit records will be preserved.</p><div className="flex justify-end gap-3"><button type="button" onClick={() => setConfirmHighImpact(false)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Cancel</button><button type="button" onClick={() => void persistEditor()} className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl cursor-pointer">Confirm {editor.status}</button></div></div>
+        </div>
+      )}
+
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3"><div className="flex items-center gap-2"><UserPlus className="w-5 h-5 text-purple-600" /><h3 className="text-sm font-extrabold text-slate-900">Add New Demo User</h3></div><button type="button" onClick={() => setShowAddUserModal(false)} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"><X className="w-5 h-5" /></button></div>
+            {modalError && <div className="p-3 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold">{modalError}</div>}
+            <form onSubmit={handleCreateUserSubmit} className="space-y-4 text-xs">
+              <label className="block space-y-1"><span className="font-bold text-slate-700">Full Name *</span><input value={newUserName} onChange={(event) => setNewUserName(event.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300" required /></label>
+              <label className="block space-y-1"><span className="font-bold text-slate-700">Email Address *</span><input type="email" value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300" required /></label>
+              <div className="grid grid-cols-2 gap-4"><label className="block space-y-1"><span className="font-bold text-slate-700">Role *</span><select value={newUserRoleId} onChange={(event) => setNewUserRoleId(event.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white">{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label><label className="block space-y-1"><span className="font-bold text-slate-700">Department *</span><input value={newUserDept} onChange={(event) => setNewUserDept(event.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-300" required /></label></div>
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100"><button type="button" onClick={() => setShowAddUserModal(false)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Cancel</button><button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl cursor-pointer disabled:opacity-50">{isSubmitting ? 'Creating...' : 'Create User'}</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
