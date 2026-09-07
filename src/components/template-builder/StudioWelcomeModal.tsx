@@ -9,6 +9,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import type { WidgetTemplate, Category, ImportProposal } from '../../types';
+import { apiService } from '../../services/apiService';
 
 interface StudioWelcomeModalProps {
   templates: WidgetTemplate[];
@@ -45,17 +46,8 @@ export const StudioWelcomeModal: React.FC<StudioWelcomeModalProps> = ({
       const formData = new FormData();
       formData.append('file', importFile);
 
-      const res = await fetch('/api/template-import/analyze', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error?.message || 'Failed to parse document');
-      }
-
-      onImportProposalReady(data.data);
+      const data = await apiService.analyzeTemplateImport(formData);
+      onImportProposalReady(data);
     } catch (err: any) {
       setImportError(err.message || 'Import failed. Please try a different DOCX, XLSX, or JSON file.');
     } finally {

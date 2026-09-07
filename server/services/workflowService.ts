@@ -9,6 +9,7 @@ import { normalizeTemplateIdentityName } from '../../src/shared/templateUtils.js
 import type { ServerUser } from '../types/index.js';
 import { adminService } from './adminService.js';
 import { authorizationService } from './authorizationService.js';
+import { resourceAccessService } from './resourceAccessService.js';
 import fs from 'fs';
 
 function extractTemplateComponents(template: any): any[] {
@@ -239,7 +240,7 @@ export const workflowService = {
     if (targetRoute.isDirectPublish || targetRoute.id === 'DIRECT_PUBLISH') {
       targetStatus = 'Approved';
       strategySnapshot = 'DIRECT_PUBLISH';
-      targetRoleId = 'DIRECT_PUBLISH';
+      targetRoleId = null;
     } else {
       targetRoleId = targetRoute.id;
       strategySnapshot = targetRoute.strategy as 'SPECIFIC_USER' | 'ROLE_QUEUE';
@@ -344,6 +345,9 @@ export const workflowService = {
     user = authorizationService.requirePermission(user, 'template_approvals.approve');
     const template = dbRepository.getTemplateById(templateId);
     if (!template) throw new AppError('Template not found.', 404, 'NOT_FOUND');
+    if (!resourceAccessService.canAccessTemplate(user, template)) {
+      throw new AppError('You do not have access to this template.', 403, 'FORBIDDEN');
+    }
 
     if (template.status !== 'Pending Approval') {
       throw new AppError('This template is no longer awaiting approval.', 400, 'INVALID_STATUS');
@@ -704,6 +708,9 @@ export const workflowService = {
     const { data, title, markAsCompleted } = payload;
     const report = dbRepository.getReportById(reportId);
     if (!report) throw new AppError('Report not found.', 404, 'NOT_FOUND');
+    if (!resourceAccessService.canAccessReport(user, report)) {
+      throw new AppError('You do not have access to this report.', 403, 'FORBIDDEN');
+    }
 
     if (report.createdById !== user.id) {
       throw new AppError('You are not authorized to edit this report.', 403, 'FORBIDDEN');
@@ -1250,6 +1257,9 @@ export const workflowService = {
 
     const template = dbRepository.getTemplateById(templateId);
     if (!template) throw new AppError('Template not found.', 404, 'NOT_FOUND');
+    if (!resourceAccessService.canAccessTemplate(user, template)) {
+      throw new AppError('You do not have access to this template.', 403, 'FORBIDDEN');
+    }
 
     const now = new Date().toISOString();
     const cmtId = `cmt-${Date.now()}`;
@@ -1288,6 +1298,9 @@ export const workflowService = {
 
     const report = dbRepository.getReportById(reportId);
     if (!report) throw new AppError('Report not found.', 404, 'NOT_FOUND');
+    if (!resourceAccessService.canAccessReport(user, report)) {
+      throw new AppError('You do not have access to this report.', 403, 'FORBIDDEN');
+    }
 
     const now = new Date().toISOString();
     const cmtId = `rcmt-${Date.now()}`;

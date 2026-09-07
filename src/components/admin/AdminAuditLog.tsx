@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { apiService } from '../../services/apiService';
+import { adminService } from '../../features/admin/services/adminService';
+import type { AdminAuditRecord } from '../../features/admin/types/adminTypes';
 import { History, Search } from 'lucide-react';
 
 export const AdminAuditLog: React.FC = () => {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<AdminAuditRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -12,7 +13,7 @@ export const AdminAuditLog: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getAdminAuditLog();
+      const data = await adminService.audit();
       setLogs(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Failed to fetch admin audit log:', err);

@@ -1,18 +1,35 @@
-import React from 'react';
-import { RoleSwitcher } from '../layout/RoleSwitcher';
-import { ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { LogOut, ShieldCheck } from 'lucide-react';
 import type { User } from '../../types';
+import { useAuth } from '../../features/auth/useAuth';
+import { toAuthError } from '../../features/auth/authErrors';
+import { navigateTo } from '../../features/auth/authRouting';
 
 interface AdminHeaderProps {
   currentUser: User;
 }
 
 export const AdminHeader: React.FC<AdminHeaderProps> = ({ currentUser }) => {
+  const { logout } = useAuth();
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+
+  const handleLogout = async () => {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    setLogoutError(null);
+    try {
+      await logout();
+      navigateTo('/login', true);
+    } catch (error) {
+      setLogoutError(toAuthError(error).message);
+    } finally {
+      setLogoutPending(false);
+    }
+  };
+
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-white shrink-0 select-none">
-      {/* Top Demo Role Switcher Bar */}
-      <RoleSwitcher />
-
       {/* Main Admin Header Content */}
       <div className="px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
@@ -33,14 +50,28 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ currentUser }) => {
         </div>
 
         {/* Admin Profile Info */}
-        <div className="flex items-center gap-3 bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700/80">
-          <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-white font-extrabold text-xs shadow-sm">
-            {currentUser.avatarInitials || 'LN'}
+        <div>
+          <div className="flex items-center gap-3 bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700/80">
+            <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-white font-extrabold text-xs shadow-sm">
+              {currentUser.avatarInitials || '?'}
+            </div>
+            <div className="text-left">
+              <div className="text-xs font-bold text-slate-200">{currentUser.name}</div>
+              <div className="text-[10px] text-purple-300 font-semibold">
+                {currentUser.profileCode ? `${currentUser.profileCode} · ` : ''}{currentUser.role} · {currentUser.email}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={logoutPending}
+              className="ml-2 flex items-center gap-1.5 rounded-lg border border-slate-600 px-2.5 py-1.5 text-[11px] font-bold text-slate-200 transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+              {logoutPending ? 'Signing out…' : 'Sign Out'}
+            </button>
           </div>
-          <div className="text-left">
-            <div className="text-xs font-bold text-slate-200">{currentUser.name}</div>
-            <div className="text-[10px] text-purple-300 font-semibold">{currentUser.department || 'Platform Administration'}</div>
-          </div>
+          {logoutError && <p role="alert" className="mt-1 text-right text-[10px] text-rose-300">{logoutError}</p>}
         </div>
       </div>
     </header>

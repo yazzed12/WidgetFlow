@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiService } from '../../services/apiService';
 import type { TemplateComponent, ComponentOption, WidgetTemplate, Category, TableColumnConfig, TableAggregateConfig, BuilderValidationIssue } from '../../types';
 import { Sliders, Trash2, Settings, Table as TableIcon, AlertCircle, Edit3, Plus, Calculator, HelpCircle, ArrowUp, ArrowDown, Copy, RotateCcw } from 'lucide-react';
 import { TableColumnModal } from './TableColumnModal';
@@ -793,21 +794,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               const reader = new FileReader();
               reader.onload = async () => {
                 const base64Data = reader.result as string;
-                const res = await fetch('/api/assets/upload', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ filename: file.name, mimeType: file.type, base64Data }),
-                });
-                const data = await res.json();
-                if (data.success) {
+                const data = await apiService.uploadTemplateAsset({ filename: file.name, mimeType: file.type, base64Data });
+                if (data) {
                   onUpdateComponent({
                     ...selectedComponent,
-                    assetUrl: data.data.url,
-                    assetId: data.data.id,
+                    assetUrl: data.url,
+                    assetId: data.id,
                     imageConfig: {
                       ...selectedComponent.imageConfig,
-                      assetUrl: data.data.url,
-                      assetId: data.data.id,
+                      assetUrl: data.url,
+                      assetId: data.id,
                     },
                   });
                 }

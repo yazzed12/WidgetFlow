@@ -16,6 +16,7 @@ import {
   Eye,
   FileText,
 } from 'lucide-react';
+import { getBusinessRevisionLabel } from '../shared/businessRevisionLabel';
 
 export const TemplatesPage: React.FC = () => {
   const {
@@ -29,12 +30,17 @@ export const TemplatesPage: React.FC = () => {
     openTemplateDetail,
     openFillReportModal,
     hasPermission,
+    templatesLoading,
+    templatesError,
+    refreshTemplates,
+    getApprovedTemplateCategoryCount,
   } = useApp();
 
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const approvedTemplates = getApprovedTemplates();
+  const normalizedSearch = searchTerm.trim().toLowerCase();
 
   const allTags = Array.from(
     new Set(approvedTemplates.flatMap((t) => t.tags))
@@ -44,10 +50,11 @@ export const TemplatesPage: React.FC = () => {
     const matchesCategory = !selectedCategory || t.categoryId === selectedCategory;
     const matchesTag = !selectedTag || t.tags.includes(selectedTag);
     const matchesSearch =
-      !searchTerm ||
-      t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+      !normalizedSearch ||
+      t.name.toLowerCase().includes(normalizedSearch) ||
+      t.description.toLowerCase().includes(normalizedSearch) ||
+      categories.find((cat) => cat.id === t.categoryId)?.name.toLowerCase().includes(normalizedSearch) ||
+      t.tags.some((tag) => tag.toLowerCase().includes(normalizedSearch));
 
     return matchesCategory && matchesTag && matchesSearch;
   });
@@ -120,7 +127,7 @@ export const TemplatesPage: React.FC = () => {
               onChange={(e) => setSelectedCategory(e.target.value || null)}
               className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
             >
-              <option value="">All Categories ({approvedTemplates.length})</option>
+              <option value="">Categories represented ({getApprovedTemplateCategoryCount()})</option>
               {categories.map((cat) => {
                 const count = approvedTemplates.filter((t) => t.categoryId === cat.id).length;
                 return (
@@ -182,12 +189,16 @@ export const TemplatesPage: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      {filteredTemplates.length === 0 ? (
+      {templatesLoading ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500 text-sm">Loading report templates...</div>
+      ) : templatesError ? (
+        <div className="bg-white rounded-xl border border-rose-200 p-12 text-center text-rose-700 space-y-3"><h3 className="text-sm font-semibold">Unable to load report templates.</h3><button onClick={() => void refreshTemplates()} className="px-3.5 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg cursor-pointer">Retry</button></div>
+      ) : filteredTemplates.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500 space-y-3 shadow-xs">
           <Filter className="w-8 h-8 text-slate-400 mx-auto" />
           <h3 className="text-sm font-semibold text-slate-800">No report templates found</h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Try changing your search keywords, category filter, or tag selection.
+            {approvedTemplates.length === 0 ? 'No approved report templates are available yet.' : 'No report templates match the current filters.'}
           </p>
           <button
             onClick={() => {
@@ -236,7 +247,7 @@ export const TemplatesPage: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <h4 className="text-xs font-bold text-slate-900 truncate">{tpl.name}</h4>
                         <span className="bg-slate-100 text-slate-600 text-[9px] font-bold px-2 py-0.2 rounded border border-slate-200">
-                          {tpl.version || 'v1.0'}
+                          {getBusinessRevisionLabel(tpl.version)}
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{tpl.description}</p>
@@ -268,6 +279,10 @@ export const TemplatesPage: React.FC = () => {
               ))}
             </div>
           )}
+        </div>
+      ) : categories.length === 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredTemplates.map((tpl) => <TemplateCard key={tpl.id} template={tpl} />)}
         </div>
       ) : (
         /* Default Grouped View by Category Heading */

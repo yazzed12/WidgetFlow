@@ -19,6 +19,7 @@ const STUDIO_MODULES = [
   { key: 'studio.templates', label: 'Templates', icon: <LayoutTemplate className="w-4 h-4" /> },
   { key: 'studio.elements', label: 'Elements', icon: <Shapes className="w-4 h-4" /> },
   { key: 'studio.content_library', label: 'Content Library', icon: <Package className="w-4 h-4" /> },
+  { key: 'studio.packs', label: 'Packs', icon: <Package className="w-4 h-4" /> },
   { key: 'studio.text', label: 'Text', icon: <Type className="w-4 h-4" /> },
   { key: 'studio.sections', label: 'Sections', icon: <Layers className="w-4 h-4" /> },
   { key: 'studio.data_fields', label: 'Data Fields', icon: <Database className="w-4 h-4" /> },

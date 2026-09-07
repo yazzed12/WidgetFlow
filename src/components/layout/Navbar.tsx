@@ -6,17 +6,21 @@ import {
   MessageSquare,
   ChevronDown,
   User as UserIcon,
-  RotateCcw,
   Menu,
   Library,
   FileSpreadsheet,
   X,
   ShieldCheck,
+  LogOut,
 } from 'lucide-react';
 import { NotificationDropdown } from './NotificationDropdown';
 import { UserSignatureSettingsModal } from '../user/UserSignatureSettingsModal';
+import { useAuth } from '../../features/auth/useAuth';
+import { toAuthError } from '../../features/auth/authErrors';
+import { navigateTo } from '../../features/auth/authRouting';
 
 export const Navbar: React.FC = () => {
+  const { logout } = useAuth();
   const {
     currentUser,
     notifications,
@@ -29,7 +33,6 @@ export const Navbar: React.FC = () => {
     openTemplateDetail,
     openReportViewModal,
     openProfileModal,
-    openResetDemoModal,
     hasPermission,
   } = useApp();
 
@@ -37,6 +40,8 @@ export const Navbar: React.FC = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [showSigModal, setShowSigModal] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   const notifRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -53,7 +58,7 @@ export const Navbar: React.FC = () => {
   // Search results calculation
   const approvedTemplates = templates.filter((t) => t.status === 'Approved');
   const userAccessibleReports = reports.filter(
-    (r) => r.createdById === currentUser.id || r.sentToId === currentUser.id || hasPermission('reports.view_organization')
+    (r) => r.createdById === currentUser.id || r.assignments?.some((a) => a.recipientUserId === currentUser.id) || r.sentToId === currentUser.id || hasPermission('reports.view_organization')
   );
 
   const matchingTemplates = searchTerm.trim()
@@ -107,6 +112,20 @@ export const Navbar: React.FC = () => {
 
   const handleChatClick = () => {
     toggleChatDrawer(true);
+  };
+
+  const handleLogout = async () => {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    setLogoutError(null);
+    try {
+      await logout();
+      navigateTo('/login', true);
+    } catch (error) {
+      setLogoutError(toAuthError(error).message);
+    } finally {
+      setLogoutPending(false);
+    }
   };
 
   return (
@@ -221,11 +240,6 @@ export const Navbar: React.FC = () => {
 
       {/* Right: Actions & Profile Dropdown */}
       <div className="flex items-center gap-2 sm:gap-4">
-        {/* Demo Auth Banner */}
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] font-bold">
-          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-          <span>Demo Authentication Mode</span>
-        </div>
         {/* Request Chat Icon */}
         {hasPermission('template_approvals.comment') && <button
           onClick={handleChatClick}
@@ -280,9 +294,12 @@ export const Navbar: React.FC = () => {
             <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-50 text-xs animate-scale-up">
               <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
                 <p className="font-bold text-slate-900">{currentUser.name}</p>
+                {currentUser.profileCode && (
+                  <p className="mt-0.5 font-mono text-[10px] font-bold text-indigo-600">{currentUser.profileCode}</p>
+                )}
                 <p className="text-[11px] text-slate-500 mt-0.5 truncate">{currentUser.email}</p>
                 <span className="inline-block mt-1.5 px-2 py-0.5 text-[10px] font-bold bg-indigo-50 text-indigo-700 rounded border border-indigo-200">
-                  {currentUser.role} • {currentUser.department}
+                  {currentUser.role}
                 </span>
               </div>
 
@@ -309,18 +326,15 @@ export const Navbar: React.FC = () => {
                   <span>My Saved Signature</span>
                 </button>
 
-                <div className="my-1 border-t border-slate-100" />
-
                 <button
-                  onClick={() => {
-                    setShowUserMenu(false);
-                    openResetDemoModal();
-                  }}
-                  className="w-full px-4 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-semibold cursor-pointer"
+                  onClick={handleLogout}
+                  disabled={logoutPending}
+                  className="w-full px-4 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <RotateCcw className="w-4 h-4 text-rose-500" />
-                  <span>Reset Demo Data</span>
+                  <LogOut className="w-4 h-4 text-rose-500" />
+                  <span>{logoutPending ? 'Signing out…' : 'Sign Out'}</span>
                 </button>
+                {logoutError && <p role="alert" className="px-4 pb-2 text-[11px] leading-4 text-rose-700">{logoutError}</p>}
               </div>
             </div>
           )}

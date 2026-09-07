@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { apiService } from '../../services/apiService';
+import { configurationService } from '../../features/configuration/services/configurationService';
 import type { AdminPack } from '../../types';
 import { Package, Search, Plus, Eye, AlertTriangle, X } from 'lucide-react';
 
@@ -21,7 +21,7 @@ export const PacksPanel: React.FC<PacksPanelProps> = ({ onInsertAdminPack }) => 
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getAvailablePacks();
+      const data = await configurationService.packs();
       setStandardPacks(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Failed to load standard packs:', err);

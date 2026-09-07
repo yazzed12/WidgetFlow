@@ -3,6 +3,8 @@ import { ShieldCheck, CheckCircle2, FileSignature, Clock } from 'lucide-react';
 import type { TemplateComponent, ReportSignatureRecord, User, TemplateTheme } from '../../types';
 import { resolveReportSignatureForComponent } from '../../shared/signatureResolver.js';
 import { resolveSignatureShellStyle } from '../../shared/themeResolver.js';
+import { getSignatureFontFamily } from '../signature/SignatureEditor';
+import { signatureService } from '../../features/signature/signatureService';
 
 export { resolveReportSignatureForComponent };
 
@@ -14,6 +16,40 @@ interface SignatureRendererProps {
   signatureHistory?: ReportSignatureRecord[];
   currentUser?: User;
   theme?: TemplateTheme;
+  value?: any;
+  reportId?: string;
+}
+
+type NormalizedPoint = { x: number; y: number };
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeDrawingData(raw: any): NormalizedPoint[][] {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.strokes)) return [];
+  return raw.strokes
+    .filter((stroke: any) => Array.isArray(stroke))
+    .map((stroke: any[]) => stroke
+      .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+      .map((point) => ({ x: clamp01(point.x), y: clamp01(point.y) })))
+    .filter((stroke: NormalizedPoint[]) => stroke.length > 0);
+}
+
+function normalizePersistedSignature(raw: any): any | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const signatureMethod = raw.signatureMethod ?? raw.signature_method;
+  const typedName = raw.typedName ?? raw.typed_name;
+  const typedFontKey = raw.typedFontKey ?? raw.typed_font_key;
+  const drawingData = raw.drawingData ?? raw.drawing_data;
+  const signatureAssetId = raw.signatureAssetId ?? raw.signature_asset_id;
+  return {
+    signatureMethod: typeof signatureMethod === 'string' ? signatureMethod.toLowerCase() : undefined,
+    typedName,
+    typedFontKey,
+    drawingData,
+    signatureAssetId,
+  };
 }
 
 export const SignatureRenderer: React.FC<SignatureRendererProps> = ({
@@ -24,6 +60,8 @@ export const SignatureRenderer: React.FC<SignatureRendererProps> = ({
   signatureHistory,
   currentUser,
   theme,
+  value,
+  reportId,
 }) => {
   const shellStyle = resolveSignatureShellStyle(component, theme);
   const sigConfig = component.signatureConfig || {};
@@ -48,12 +86,29 @@ export const SignatureRenderer: React.FC<SignatureRendererProps> = ({
     signatureHistory,
     activeSignature,
   });
+  const persisted = normalizePersistedSignature(value);
+  const hasPersisted = !!(persisted && (persisted.signatureMethod || persisted.typedName || persisted.drawingData || persisted.signatureAssetId));
+  const persistedName = persisted?.typedName || value?.signedByName || value?.signerName;
+  const persistedDrawing = normalizeDrawingData(persisted?.drawingData);
+  const drawingToRender = hasPersisted ? persistedDrawing : normalizeDrawingData((relevantSignature as any)?.drawingData);
+  const persistedImage = typeof persisted?.drawingData === 'string' && persisted.drawingData.startsWith('data:') ? persisted.drawingData : undefined;
+  const uploadedAssetId = persisted?.signatureAssetId || (relevantSignature as any)?.signatureAssetId;
+  const [resolvedUploadedUrl, setResolvedUploadedUrl] = React.useState<string>();
+  React.useEffect(() => {
+    let mounted = true;
+    setResolvedUploadedUrl(undefined);
+    if (reportId && uploadedAssetId && (persisted?.signatureMethod || relevantSignature?.signatureMethod) === 'uploaded') {
+      void signatureService.resolveReportSignaturePreview(reportId, uploadedAssetId).then((url) => { if (mounted) setResolvedUploadedUrl(url); }).catch(() => undefined);
+    }
+    return () => { mounted = false; };
+  }, [reportId, uploadedAssetId, persisted?.signatureMethod, relevantSignature?.signatureMethod]);
 
-  if (readOnly || relevantSignature) {
-    if (relevantSignature) {
-      const isSender = String(relevantSignature.signatureRole).toLowerCase() === 'sender';
-      const formattedDate = relevantSignature.signedAt
-        ? new Date(relevantSignature.signedAt).toLocaleString('en-GB', {
+  if (readOnly || relevantSignature || hasPersisted) {
+    if (relevantSignature || hasPersisted) {
+      const displaySignature: any = hasPersisted ? { ...(relevantSignature || {}), signatureMethod: persisted.signatureMethod || 'typed', signatureDataUrl: persistedImage || resolvedUploadedUrl, drawingData: persisted.drawingData, typedFontKey: persisted.typedFontKey, typedName: persistedName, signedByName: persistedName || relevantSignature?.signedByName || 'Signed user', signedByRole: relevantSignature?.signedByRole || roleDisplayLabel, verificationId: relevantSignature?.verificationId || persisted.signatureAssetId || 'Persisted signature' } : { ...(relevantSignature || {}), signatureDataUrl: resolvedUploadedUrl || relevantSignature?.signatureDataUrl };
+      const isSender = String(displaySignature.signatureRole || canonicalRole).toLowerCase() === 'sender';
+      const formattedDate = displaySignature.signedAt
+        ? new Date(displaySignature.signedAt).toLocaleString('en-GB', {
             day: '2-digit',
             month: 'short',
             year: 'numeric',
@@ -87,13 +142,21 @@ export const SignatureRenderer: React.FC<SignatureRendererProps> = ({
           {/* Signature Representation */}
           {showImage && (
             <div className="py-2.5 px-4 bg-white border border-slate-200 rounded-xl min-h-[60px] flex items-center justify-center">
-              {relevantSignature.signatureMethod === 'drawn' && relevantSignature.signatureDataUrl ? (
-                <img src={relevantSignature.signatureDataUrl} alt="Drawn Signature" className="max-h-14 object-contain" />
-              ) : relevantSignature.signatureMethod === 'uploaded' && relevantSignature.signatureDataUrl ? (
-                <img src={relevantSignature.signatureDataUrl} alt="Uploaded Signature" className="max-h-14 object-contain" />
+              {displaySignature.signatureMethod === 'drawn' && drawingToRender.length ? (
+                <svg viewBox="0 0 1000 300" preserveAspectRatio="xMidYMid meet" className="h-16 w-full max-h-20" role="img" aria-label="Drawn signature">
+                  {drawingToRender.map((stroke, index) => stroke.length === 1 ? (
+                    <circle key={index} cx={stroke[0].x * 1000} cy={stroke[0].y * 300} r="6" fill="currentColor" />
+                  ) : (
+                    <polyline key={index} points={stroke.map((point) => `${point.x * 1000},${point.y * 300}`).join(' ')} fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+                  ))}
+                </svg>
+              ) : displaySignature.signatureDataUrl ? (
+                <img src={displaySignature.signatureDataUrl} alt="Digital Signature" className="max-h-14 object-contain" />
+              ) : displaySignature.signatureMethod === 'uploaded' ? (
+                <p className="text-xs italic text-slate-500">Imported signature asset</p>
               ) : (
                 <p className="font-serif italic text-2xl text-indigo-950 font-extrabold tracking-wide">
-                  {relevantSignature.typedName || relevantSignature.signedByName}
+                  <span style={{ fontFamily: getSignatureFontFamily(displaySignature.typedFontKey) }}>{displaySignature.typedName || displaySignature.signedByName}</span>
                 </p>
               )}
             </div>
@@ -102,8 +165,8 @@ export const SignatureRenderer: React.FC<SignatureRendererProps> = ({
           {/* Metadata Footer */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-600">
             <div>
-              {showName && <span className="font-bold text-slate-900">{relevantSignature.signedByName}</span>}
-              {showRole && <span className="text-slate-500 font-medium"> ({relevantSignature.signedByRole})</span>}
+              {showName && <span className="font-bold text-slate-900">{displaySignature.signedByName}</span>}
+              {showRole && <span className="text-slate-500 font-medium"> ({displaySignature.signedByRole})</span>}
             </div>
 
             {showDate && formattedDate && (
@@ -118,9 +181,9 @@ export const SignatureRenderer: React.FC<SignatureRendererProps> = ({
           <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px] text-slate-400 font-mono">
             <span className="flex items-center gap-1 text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 font-sans">
               <ShieldCheck className="w-3 h-3 text-indigo-600" />
-              Verification ID: {relevantSignature.verificationId}
+              Verification ID: {displaySignature.verificationId}
             </span>
-            <span className="capitalize">Method: {relevantSignature.signatureMethod}</span>
+            <span className="capitalize">Method: {displaySignature.signatureMethod}</span>
           </div>
         </div>
       );

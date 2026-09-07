@@ -1,0 +1,7 @@
+import fs from 'node:fs'; import assert from 'node:assert/strict';
+const root = new URL('../../', import.meta.url).pathname;
+const sql = fs.readFileSync(`${root}supabase/migrations/031_report_snapshot_shape_compatibility.sql`, 'utf8');
+const verify = fs.readFileSync(`${root}supabase/migrations/031_verify_report_snapshot_shape_compatibility.sql`, 'utf8');
+const repo = fs.readFileSync(`${root}src/features/reports/reportRepository.ts`, 'utf8');
+assert.match(sql,/030_report_core_lifecycle_hardening/); assert.match(sql,/field_key/); assert.match(sql,/f->>'key'/); assert.match(sql,/field_type/); assert.match(sql,/f->>'type'/); assert.match(sql,/is_required/); assert.match(sql,/f->>'required'/); assert.match(sql,/default_value/); assert.match(sql,/defaultValue/); assert.match(sql,/TEMPLATE_VERSION_DUPLICATE_FIELD_KEY/); assert.match(sql,/UNKNOWN_REPORT_FIELD/); assert.match(sql,/safe_template_field_id/); assert.match(sql,/~\* '\^\[0-9a-f\]/); assert.match(sql,/jsonb_array_length/); assert.match(sql,/val='\{\}'::jsonb/); assert.doesNotMatch(sql,/update\s+public\.template_versions/i); assert.doesNotMatch(sql,/report_send_cycles\s*\(/); assert.doesNotMatch(repo,/apiService/); assert.match(verify,/031_report_snapshot_shape_compatibility/); assert.doesNotMatch(verify.replace(/--.*$/gm,''),/^\s*(insert|update|delete|alter|create|drop|grant|revoke)\b/im);
+console.log('phase4b2.1 snapshot compatibility static checks passed');

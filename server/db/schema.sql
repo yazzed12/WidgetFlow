@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS report_template_fields (
   section_name TEXT NOT NULL,
   field_key TEXT,
   label TEXT NOT NULL,
-  field_type TEXT NOT NULL CHECK(field_type IN ('text', 'textarea', 'number', 'currency', 'percentage', 'date', 'datetime', 'select', 'radio', 'checkbox', 'file', 'heading', 'paragraph')),
+  field_type TEXT NOT NULL,
   required INTEGER NOT NULL DEFAULT 1,
   placeholder TEXT,
   description TEXT,

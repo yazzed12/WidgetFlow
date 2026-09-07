@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSystemConfig } from '../../context/SystemConfigContext';
-import { apiService } from '../../services/apiService';
+import { configurationService } from '../../features/configuration/services/configurationService';
 import { AdminInfoTooltip } from './AdminInfoTooltip';
 import {
   Shapes,
@@ -69,7 +69,7 @@ export const AdminElementManagement: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getAdminElements();
+      const data = await configurationService.elements();
       setElements(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Failed to fetch admin elements:', err);
@@ -166,6 +166,10 @@ export const AdminElementManagement: React.FC = () => {
         </div>
       ) : loading ? (
         <div className="p-12 text-center text-xs text-slate-400">Loading elements...</div>
+      ) : elements.length === 0 ? (
+        <div className="p-12 text-center text-xs text-slate-400 bg-white border border-slate-200 rounded-2xl">
+          No element settings are configured.
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredElements.map((el) => {

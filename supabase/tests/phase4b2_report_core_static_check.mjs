@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const root = new URL('../../', import.meta.url).pathname;
+const migration = fs.readFileSync(`${root}supabase/migrations/029_report_core_lifecycle.sql`, 'utf8');
+const repo = fs.readFileSync(`${root}src/features/reports/reportRepository.ts`, 'utf8');
+const service = fs.readFileSync(`${root}src/features/reports/reportService.ts`, 'utf8');
+const context = fs.readFileSync(`${root}src/context/AppContext.tsx`, 'utf8');
+const fill = fs.readFileSync(`${root}src/components/reports/FillReportModal.tsx`, 'utf8');
+const header = fs.readFileSync(`${root}src/components/template-builder/BuilderHeader.tsx`, 'utf8');
+for (const fn of ['create_report_from_template','save_report_draft','complete_report']) assert.match(migration, new RegExp(`create or replace function public\\.${fn}`));
+assert.match(migration, /auth\.uid\(\)/); assert.match(migration, /set search_path = ''/);
+assert.match(migration, /status\s*=\s*'approved'/); assert.match(migration, /REPORT_CREATED/); assert.match(migration, /REPORT_COMPLETED/); assert.match(migration, /UNKNOWN_REPORT_FIELD/);
+assert.doesNotMatch(migration, /report_send_cycles\s*\(/); assert.match(repo, /rpc\('create_report_from_template'/); assert.match(repo, /rpc\('save_report_draft'/); assert.match(repo, /rpc\('complete_report'/);
+assert.match(service, /mapReportRow/); assert.match(context, /reportService\.list/); assert.match(context, /reportService\.create/); assert.match(context, /reportService\.saveDraft/); assert.match(context, /reportService\.complete/);
+assert.doesNotMatch(fill, /apiService\.(createReport|updateReport)/); assert.match(header, /fetchTemplateSubmissionAction/); assert.doesNotMatch(header, /governanceLevel === 'Director'/);
+console.log('phase4b2 report core static checks passed');

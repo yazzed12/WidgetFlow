@@ -1,33 +1,28 @@
 import React, { useState } from 'react';
 import { useSystemConfig } from '../../context/SystemConfigContext';
-import { apiService } from '../../services/apiService';
+import { configurationService } from '../../features/configuration/services/configurationService';
 import { AdminInfoTooltip } from './AdminInfoTooltip';
 import {
   Settings,
   Building,
   ShieldCheck,
-  RotateCcw,
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react';
 
 export const AdminSystemSettings: React.FC = () => {
-  const { config, updateSettings, refreshConfig } = useSystemConfig();
-  const [orgName, setOrgName] = useState(config.settings?.org_name || 'WidgetFlow Demo Company');
-  const [platformName, setPlatformName] = useState(config.settings?.platform_name || 'WidgetFlow');
-  const [defaultVersion, setDefaultVersion] = useState(config.settings?.default_template_version || '1.0');
+  const { config, updateSettings } = useSystemConfig();
+  const [orgName, setOrgName] = useState(config.settings?.org_name || '');
+  const [platformName, setPlatformName] = useState(config.settings?.platform_name || '');
+  const [defaultVersion, setDefaultVersion] = useState(config.settings?.default_template_version || '');
 
-  const [allowRejection, setAllowRejection] = useState(config.settings?.allow_rejection ?? true);
-  const [allowReturn, setAllowReturn] = useState(config.settings?.allow_return ?? true);
-  const [digitalSignature, setDigitalSignature] = useState(config.settings?.digital_signature ?? true);
-  const [templateGovernance, setTemplateGovernance] = useState(config.settings?.template_governance ?? true);
+  const [allowRejection, setAllowRejection] = useState(config.settings?.allow_rejection ?? false);
+  const [allowReturn, setAllowReturn] = useState(config.settings?.allow_return ?? false);
+  const [digitalSignature, setDigitalSignature] = useState(config.settings?.digital_signature ?? false);
+  const [templateGovernance, setTemplateGovernance] = useState(config.settings?.template_governance ?? false);
 
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Reset Demo Modal State
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
 
   React.useEffect(() => {
     if (config.settings) {
@@ -63,20 +58,6 @@ export const AdminSystemSettings: React.FC = () => {
     }
   };
 
-  const handleConfirmResetDemo = async () => {
-    try {
-      setIsResetting(true);
-      await apiService.resetDemo();
-      await refreshConfig();
-      setShowResetModal(false);
-      window.location.reload();
-    } catch (err: any) {
-      alert(err.message || 'Failed to reset demo data');
-    } finally {
-      setIsResetting(false);
-    }
-  };
-
   return (
     <div className="space-y-6 animate-fade-in p-6">
       {/* Toast Notification */}
@@ -95,7 +76,7 @@ export const AdminSystemSettings: React.FC = () => {
             <h2 className="text-xl font-black tracking-tight text-slate-900">System Settings</h2>
           </div>
           <p className="text-xs text-slate-500 font-medium pt-1">
-            Global organization policies, review settings, digital signatures, and demo data controls.
+            Global organization policies, review settings, digital signatures, and governance controls.
           </p>
         </div>
       </div>
@@ -251,65 +232,6 @@ export const AdminSystemSettings: React.FC = () => {
         </div>
       </form>
 
-      {/* Section 3: Demo Mode Reset Danger Zone */}
-      <div className="bg-rose-50/70 p-6 rounded-2xl border border-rose-200/80 max-w-4xl space-y-3">
-        <div className="flex items-center gap-2">
-          <RotateCcw className="w-5 h-5 text-rose-600" />
-          <h3 className="text-sm font-extrabold text-rose-900">Demo Environment Control</h3>
-        </div>
-        <p className="text-xs text-rose-700 font-medium leading-relaxed">
-          Reset all demo database state back to factory defaults. Restores all 4 demo users (Ahmed, Sarah, Omar, Lina), default Studio features, elements, template categories, and baseline audit history.
-        </p>
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => setShowResetModal(true)}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer flex items-center gap-2"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Reset Demo Environment</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Reset Confirmation Modal */}
-      {showResetModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl border border-slate-200 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-up">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-rose-100 text-rose-700 rounded-2xl">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base font-extrabold text-slate-900">Reset Demo Data?</h3>
-                <p className="text-xs text-slate-500 font-medium">Restores baseline factory setup</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              This action will reset all feature flags, element toggles, categories, custom users, report templates, and audit logs to their initial default state.
-            </p>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowResetModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmResetDemo}
-                disabled={isResetting}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer disabled:opacity-50"
-              >
-                {isResetting ? 'Resetting...' : 'Confirm Reset'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -321,13 +243,13 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
   const [error, setError] = React.useState<string | null>(null);
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
 
-  const [employeeTarget, setEmployeeTarget] = React.useState('role-manager');
+  const [employeeTarget, setEmployeeTarget] = React.useState('');
   const [employeeStrategy, setEmployeeStrategy] = React.useState<'SPECIFIC_USER' | 'ROLE_QUEUE' | 'DIRECT_PUBLISH'>('SPECIFIC_USER');
-  const [employeeUser, setEmployeeUser] = React.useState('user-manager');
+  const [employeeUser, setEmployeeUser] = React.useState('');
 
-  const [managerTarget, setManagerTarget] = React.useState('role-director');
+  const [managerTarget, setManagerTarget] = React.useState('');
   const [managerStrategy, setManagerStrategy] = React.useState<'SPECIFIC_USER' | 'ROLE_QUEUE' | 'DIRECT_PUBLISH'>('SPECIFIC_USER');
-  const [managerUser, setManagerUser] = React.useState('user-director');
+  const [managerUser, setManagerUser] = React.useState('');
 
   const [directorTarget, setDirectorTarget] = React.useState('DIRECT_PUBLISH');
   const [directorStrategy, setDirectorStrategy] = React.useState<'SPECIFIC_USER' | 'ROLE_QUEUE' | 'DIRECT_PUBLISH'>('DIRECT_PUBLISH');
@@ -336,7 +258,7 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
   const load = async () => {
     try {
       setLoading(true);
-      const res = await apiService.getGovernanceRouting();
+      const res = await configurationService.governance();
       setData(res);
       if (res.routes) {
         setEmployeeTarget(res.routes.employee.id);
@@ -366,7 +288,7 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
       setSaving(true);
       setError(null);
       setSuccessMsg(null);
-      const res = await apiService.updateGovernanceRouting({
+      const res = await configurationService.updateGovernance({
         employeeTargetRoleId: employeeTarget,
         employeeStrategy,
         employeeSpecificUserId: employeeUser,
@@ -496,7 +418,7 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
       setEmployeeUser('DIRECT_PUBLISH');
     } else {
       if (employeeTarget === 'DIRECT_PUBLISH') {
-        const defaultRole = eligibleRoles.find((r: any) => r.hasReviewPermissions)?.id || eligibleRoles[0]?.id || 'role-manager';
+        const defaultRole = eligibleRoles.find((r: any) => r.hasReviewPermissions)?.id || eligibleRoles[0]?.id || '';
         setEmployeeTarget(defaultRole);
         const eligible = getEligibleUsersForRole(defaultRole);
         setEmployeeUser(eligible.length === 1 ? eligible[0].id : '');
@@ -511,7 +433,7 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
       setManagerUser('DIRECT_PUBLISH');
     } else {
       if (managerTarget === 'DIRECT_PUBLISH') {
-        const defaultRole = eligibleRoles.find((r: any) => r.hasReviewPermissions)?.id || eligibleRoles[0]?.id || 'role-director';
+        const defaultRole = eligibleRoles.find((r: any) => r.hasReviewPermissions)?.id || eligibleRoles[0]?.id || '';
         setManagerTarget(defaultRole);
         const eligible = getEligibleUsersForRole(defaultRole);
         setManagerUser(eligible.length === 1 ? eligible[0].id : '');
@@ -526,7 +448,7 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
       setDirectorUser('DIRECT_PUBLISH');
     } else {
       if (directorTarget === 'DIRECT_PUBLISH') {
-        const defaultRole = eligibleRoles.find((r: any) => r.hasReviewPermissions)?.id || eligibleRoles[0]?.id || 'role-director';
+        const defaultRole = eligibleRoles.find((r: any) => r.hasReviewPermissions)?.id || eligibleRoles[0]?.id || '';
         setDirectorTarget(defaultRole);
         const eligible = getEligibleUsersForRole(defaultRole);
         setDirectorUser(eligible.length === 1 ? eligible[0].id : '');
@@ -659,7 +581,7 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
                 <option value="">Select reviewer from Target Role...</option>
                 {empEligibleUsers.map((u: any) => (
                   <option key={u.id} value={u.id}>
-                    {u.name} ({u.role}) — {u.department}
+                    {u.name} ({u.profileCode}) — {u.department}
                   </option>
                 ))}
               </select>
@@ -760,7 +682,7 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
                 <option value="">Select reviewer from Target Role...</option>
                 {mgrEligibleUsers.map((u: any) => (
                   <option key={u.id} value={u.id}>
-                    {u.name} ({u.role}) — {u.department}
+                    {u.name} ({u.profileCode}) — {u.department}
                   </option>
                 ))}
               </select>
@@ -861,7 +783,7 @@ const TemplateGovernanceRoutingCard: React.FC<{ isGovernanceEnabled: boolean }> 
                 <option value="">Select reviewer from Target Role...</option>
                 {dirEligibleUsers.map((u: any) => (
                   <option key={u.id} value={u.id}>
-                    {u.name} ({u.role}) — {u.department}
+                    {u.name} ({u.profileCode}) — {u.department}
                   </option>
                 ))}
               </select>

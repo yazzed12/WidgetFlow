@@ -3,9 +3,19 @@ import type { AuthenticatedRequest } from '../types/index.js';
 import { authorizationService } from '../services/authorizationService.js';
 
 export function demoUserMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const userIdHeader = (req.headers['x-demo-user-id'] as string) || 'user-employee';
+  const userIdHeader = req.headers['x-demo-user-id'];
 
-  const user = authorizationService.resolveUser(userIdHeader) || authorizationService.resolveUser('user-employee');
+  if (typeof userIdHeader !== 'string' || !userIdHeader.trim()) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'DEMO_IDENTITY_REQUIRED',
+        message: 'An explicit demo identity is required in demo mode.',
+      },
+    });
+  }
+
+  const user = authorizationService.resolveUser(userIdHeader.trim());
 
   if (user) {
     if (user.status !== 'Active' || !user.roleActive) {

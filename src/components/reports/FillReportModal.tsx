@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import type { WidgetTemplate, ReportInstance } from '../../types';
 import { useApp } from '../../context/AppContext';
-import { apiService } from '../../services/apiService';
 import { DynamicTemplateRenderer } from '../dynamic-template/DynamicTemplateRenderer';
 import { validateTemplateValues } from '../dynamic-template/validationHelper';
-import { normalizeReportDataForEditing } from '../../shared/signatureResolver';
+import { getReportBusinessFieldKey, normalizeReportDataForEditing } from '../../shared/signatureResolver';
 import { X, FileText, Save, Send, AlertCircle, Loader2 } from 'lucide-react';
 
 interface FillReportModalProps {
@@ -49,10 +48,24 @@ export const FillReportModal: React.FC<FillReportModalProps> = ({ template, onCl
     return Object.keys(newErrors).length === 0;
   };
 
+  const canonicalizeForPersistence = (data: Record<string, any>) => {
+    const fields = Array.isArray((template as any).components) && (template as any).components.length > 0
+      ? (template as any).components
+      : Array.isArray((template as any).fields) ? (template as any).fields : [];
+    const missing = fields.filter((field: any) => {
+      const type = field.type || field.field_type;
+      return type !== 'heading' && type !== 'paragraph' && !getReportBusinessFieldKey(field);
+    });
+    if (missing.length > 0) {
+      throw new Error(`REPORT_FIELD_KEY_MISSING:${missing.map((field: any) => field.id || 'unknown').join(',')}`);
+    }
+    return normalizeReportDataForEditing(data, template);
+  };
+
   const handleSaveDraft = async () => {
     setIsSubmitting(true);
     try {
-      const canonicalData = normalizeReportDataForEditing(formData, template);
+      const canonicalData = canonicalizeForPersistence(formData);
       if (reportToEdit) {
         await updateReportInstance(reportToEdit.id, canonicalData, reportTitle.trim() || defaultTitle, false);
       } else {
@@ -73,15 +86,18 @@ export const FillReportModal: React.FC<FillReportModalProps> = ({ template, onCl
 
     setIsSubmitting(true);
     try {
-      const canonicalData = normalizeReportDataForEditing(formData, template);
+      const canonicalData = canonicalizeForPersistence(formData);
       let activeReport: ReportInstance;
       if (reportToEdit) {
-        activeReport = await apiService.updateReport(reportToEdit.id, canonicalData, reportTitle.trim() || defaultTitle);
+        activeReport = (await updateReportInstance(reportToEdit.id, canonicalData, reportTitle.trim() || defaultTitle, true))!;
       } else {
-        activeReport = await apiService.createReport(template.id, canonicalData, reportTitle.trim() || defaultTitle);
+        activeReport = (await createReportInstance({ templateId: template.id, data: canonicalData, title: reportTitle.trim() || defaultTitle }))!;
+        activeReport = (await updateReportInstance(activeReport.id, canonicalData, reportTitle.trim() || defaultTitle, true))!;
       }
       await refreshReports();
 
+      // Supabase Reports are intentionally send-blocked until Phase 4B.3;
+      // never open the legacy recipient flow for a UUID-backed Report.
       onClose();
       openSendReportModal(activeReport);
     } catch (err: any) {

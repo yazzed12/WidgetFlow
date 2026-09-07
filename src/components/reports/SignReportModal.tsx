@@ -20,6 +20,7 @@ export const SignReportModal: React.FC<SignReportModalProps> = ({ report, onClos
         await signReport(report.id, payload);
       }}
       onClose={onClose}
+      isSupabaseReport={/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(report.id)}
     />
   );
 };

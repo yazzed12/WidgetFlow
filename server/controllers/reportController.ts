@@ -4,6 +4,7 @@ import { dbRepository } from '../repositories/dbRepository.js';
 import { workflowService } from '../services/workflowService.js';
 import { authorizationService } from '../services/authorizationService.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { resourceAccessService } from '../services/resourceAccessService.js';
 
 function getId(req: AuthenticatedRequest): string {
   return Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -32,11 +33,7 @@ export const reportController = {
     try {
       const report = dbRepository.getReportById(getId(req));
       if (!report) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Report not found' } });
-      const canAccess =
-        (report.createdById === req.user!.id && authorizationService.hasPermission(req.user!, 'reports.view_own')) ||
-        (report.sentToId === req.user!.id && authorizationService.hasPermission(req.user!, 'reports.view_received')) ||
-        authorizationService.hasPermission(req.user!, 'reports.view_organization');
-      if (!canAccess) throw new AppError('You do not have access to this report.', 403, 'FORBIDDEN');
+      if (!resourceAccessService.canAccessReport(req.user!, report)) throw new AppError('You do not have access to this report.', 403, 'FORBIDDEN');
       res.json({ success: true, data: report });
     } catch (err) {
       next(err);
@@ -113,6 +110,9 @@ export const reportController = {
   getComments(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       authorizationService.requirePermission(req.user!, 'reports.comment');
+      const report = dbRepository.getReportById(getId(req));
+      if (!report) throw new AppError('Report not found.', 404, 'NOT_FOUND');
+      if (!resourceAccessService.canAccessReport(req.user!, report)) throw new AppError('You do not have access to this report.', 403, 'FORBIDDEN');
       const comments = dbRepository.getReportComments(getId(req));
       res.json({ success: true, data: comments });
     } catch (err) {

@@ -15,6 +15,7 @@ import {
   Layers,
   FileSpreadsheet,
   Shield,
+  XCircle,
   Eye,
   Plus,
   FileText,
@@ -34,6 +35,7 @@ export const DashboardPage: React.FC = () => {
     openFillReportModal,
     openReportViewModal,
     openSignReportModal,
+    openRejectReportModal,
     openAddTemplateModal,
     hasPermission,
   } = useApp();
@@ -54,7 +56,7 @@ export const DashboardPage: React.FC = () => {
   );
 
   const userRelevantReports = reports
-    .filter((r) => r.createdById === currentUser.id || r.sentToId === currentUser.id)
+    .filter((r) => r.createdById === currentUser.id || r.assignments?.some((a) => a.recipientUserId === currentUser.id) || r.sentToId === currentUser.id)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 5);
 
@@ -402,10 +404,13 @@ export const DashboardPage: React.FC = () => {
                         <span>•</span>
                         <span>Updated {formatRelativeTime(rep.updatedAt)}</span>
                       </div>
+                      {rep.status === 'Rejected' && rep.rejectionReason && (
+                        <div className="mt-1 text-[11px] text-rose-700 font-medium truncate max-w-full">Reason: {rep.rejectionReason}</div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      {rep.status === 'Sent' && rep.sentToId === currentUser.id && (
+                      {rep.status === 'Sent' && (!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(rep.id) || rep.signatureAssignments?.some((m) => m.recipientUserId === currentUser.id && m.sendCycleId === rep.currentSendCycleId)) && (
                         <button
                           onClick={() => openSignReportModal(rep)}
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"
@@ -413,6 +418,9 @@ export const DashboardPage: React.FC = () => {
                           <Shield className="w-3.5 h-3.5" />
                           <span>Sign</span>
                         </button>
+                      )}
+                      {rep.status === 'Sent' && hasPermission('reports.reject') && rep.assignments?.some((a) => a.recipientUserId === currentUser.id && a.sendCycleId === rep.currentSendCycleId && a.assignmentStatus === 'pending' && rep.signatureAssignments?.some((m) => m.reportAssignmentId === a.id && m.recipientUserId === currentUser.id && m.sendCycleId === rep.currentSendCycleId)) && (
+                        <button onClick={() => openRejectReportModal(rep)} className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg cursor-pointer flex items-center gap-1 shadow-xs"><XCircle className="w-3.5 h-3.5" /><span>Reject</span></button>
                       )}
 
                       <button

@@ -1,22 +1,26 @@
 import type { WidgetTemplate, ReportTemplateField, TemplateComponent } from '../../types';
+import { getReportBusinessFieldKey } from '../../shared/signatureResolver';
 
 export function validateTemplateValues(
   template: WidgetTemplate | { fields?: ReportTemplateField[]; components?: TemplateComponent[] },
   values: Record<string, any>
 ): Record<string, string> {
   const errors: Record<string, string> = {};
-  const fields = template.components || template.fields || [];
+  const fields = Array.isArray(template.components) && template.components.length > 0
+    ? template.components
+    : template.fields || [];
 
   fields.forEach((f) => {
     // Skip static heading/paragraph components
     if (f.type === 'heading' || f.type === 'paragraph') return;
 
-    const fieldKey = f.key || f.id;
-    const rawValue = values[fieldKey] !== undefined ? values[fieldKey] : values[f.id];
+    const fieldKey = getReportBusinessFieldKey(f) || '';
+    if (!fieldKey) return;
+    const rawValue = values[fieldKey];
     const valStr = rawValue !== undefined && rawValue !== null ? String(rawValue).trim() : '';
 
     // 1. Required Check
-    if (f.required) {
+    if ((f as any).required ?? (f as any).is_required) {
       if (f.type === 'checkbox') {
         if (!rawValue) {
           errors[fieldKey] = `${f.label || fieldKey} must be checked.`;

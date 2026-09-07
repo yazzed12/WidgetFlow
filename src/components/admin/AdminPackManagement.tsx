@@ -1,27 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Edit3, Eye, Package, Plus, Search, X } from 'lucide-react';
-import { apiService } from '../../services/apiService';
-import type { AdminPack } from '../../types';
-import { TemplateBuilder } from '../template-builder/TemplateBuilder';
+import { AlertTriangle, Archive, Edit3, Eye, Package, Plus, Search, X } from 'lucide-react';
+import { adminService } from '../../features/admin/services/adminService';
+import type { AdminPack, Category } from '../../types';
 import { AdminInfoTooltip } from './AdminInfoTooltip';
+import { TemplateBuilder } from '../template-builder/TemplateBuilder';
+import type { builderTemplateToAdminPackPayload } from '../template-builder/adminPackCanvas';
 
 export const AdminPackManagement: React.FC = () => {
   const [packs, setPacks] = useState<AdminPack[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'All' | 'Enabled' | 'Disabled'>('All');
+  const [statusFilter, setStatusFilter] = useState<'All' | 'Draft' | 'Published' | 'Disabled' | 'Archived'>('All');
   const [searchTerm, setSearchTerm] = useState('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [viewingPack, setViewingPack] = useState<AdminPack | null>(null);
-  const [isBuilderOpen, setIsBuilderOpen] = useState(false);
-  const [editingPack, setEditingPack] = useState<AdminPack | null>(null);
+  const [builderPack, setBuilderPack] = useState<AdminPack | null | undefined>(undefined);
 
   const fetchPacks = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getAdminPacks();
+      const [data, categoryData] = await Promise.all([adminService.packs(), adminService.categories()]);
       setPacks(Array.isArray(data) ? data : []);
+      setCategories(Array.isArray(categoryData) ? categoryData.filter((category) => category.status !== 'Inactive') : []);
     } catch (err: any) {
       console.error('Failed to fetch admin packs:', err);
       setError(err.message || 'Unable to load Standard Packs.');
@@ -34,60 +35,35 @@ export const AdminPackManagement: React.FC = () => {
     void fetchPacks();
   }, []);
 
-  const openCreateBuilder = () => {
-    setEditingPack(null);
-    setIsBuilderOpen(true);
-  };
-
-  const openEditBuilder = (pack: AdminPack) => {
-    setEditingPack(pack);
-    setIsBuilderOpen(true);
-  };
-
-  const handleToggleStatus = async (pack: AdminPack) => {
-    try {
-      const nextStatus = pack.status === 'Disabled' ? 'Published' : 'Disabled';
-      const updated = await apiService.updateAdminPackStatus(pack.id, nextStatus);
-      setPacks((current) => current.map((item) => item.id === pack.id ? updated : item));
-      setToastMessage(`Pack "${pack.name}" is now ${nextStatus === 'Published' ? 'Enabled' : 'Disabled'}.`);
-      window.setTimeout(() => setToastMessage(null), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Unable to update Pack status.');
-    }
-  };
-
   const filteredPacks = packs.filter((pack) => {
-    const enabled = pack.status === 'Published';
-    const matchesStatus = statusFilter === 'All' || (statusFilter === 'Enabled' ? enabled : !enabled);
+    const matchesStatus = statusFilter === 'All' || pack.status === statusFilter;
     const query = searchTerm.toLowerCase();
     return matchesStatus && (pack.name.toLowerCase().includes(query) || (pack.categoryName || '').toLowerCase().includes(query));
   });
 
-  if (isBuilderOpen) {
-    return (
-      <TemplateBuilder
-        mode="admin-pack"
-        initialPack={editingPack}
-        onClose={() => setIsBuilderOpen(false)}
-        onPackSaved={async (saved) => {
-          await fetchPacks();
-          setIsBuilderOpen(false);
-          setToastMessage(editingPack ? `Pack "${saved.name}" updated successfully.` : `Pack "${saved.name}" created and enabled.`);
-          window.setTimeout(() => setToastMessage(null), 3500);
-        }}
-      />
-    );
-  }
+  type PackPayload = ReturnType<typeof builderTemplateToAdminPackPayload>;
+  const saveDraft = async (payload: PackPayload, initialPack: AdminPack | null) => {
+    if (initialPack?.id && initialPack.draftVersionId) {
+      await adminService.savePackDraft(initialPack.id, payload);
+    } else if (initialPack?.id) {
+      throw new Error('Create a new draft version before editing this published Pack.');
+    } else {
+      await adminService.createPack(payload);
+    }
+    await fetchPacks();
+  };
+  const publishDraft = async (_payload: PackPayload, initialPack: AdminPack | null) => {
+    if (!initialPack?.draftVersionId) throw new Error('Save a draft before publishing this Pack.');
+    await adminService.publishPack(initialPack.id, initialPack.draftVersionId);
+    await fetchPacks();
+  };
+  const runPackAction = async (action: () => Promise<unknown>) => {
+    try { setError(null); await action(); await fetchPacks(); }
+    catch (err: any) { setError(err.message || 'Pack operation failed.'); }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in p-6">
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-800 flex items-center gap-3 text-xs font-bold">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -96,22 +72,19 @@ export const AdminPackManagement: React.FC = () => {
           </div>
           <p className="text-xs text-slate-500 font-medium pt-1">Build and manage Standard Packs available to template creators across the organization.</p>
         </div>
-        <button type="button" onClick={openCreateBuilder} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer">
-          <Plus className="w-4 h-4" /><span>Create Pack</span>
-        </button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-          {(['All', 'Enabled', 'Disabled'] as const).map((status) => (
+          {(['All', 'Draft', 'Published', 'Disabled', 'Archived'] as const).map((status) => (
             <button key={status} type="button" onClick={() => setStatusFilter(status)} className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${statusFilter === status ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'}`}>
-              {status} ({status === 'All' ? packs.length : packs.filter((pack) => status === 'Enabled' ? pack.status === 'Published' : pack.status === 'Disabled').length})
+              {status === 'Published' ? 'Published / Enabled' : status} ({status === 'All' ? packs.length : packs.filter((pack) => pack.status === status).length})
             </button>
           ))}
         </div>
-        <div className="relative w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search packs..." className="w-full pl-9 pr-3 py-2 bg-white rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-indigo-600 focus:outline-none" />
+        <div className="flex items-center gap-2">
+          <div className="relative w-56"><Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search packs..." className="w-full pl-9 pr-3 py-2 bg-white rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-indigo-600 focus:outline-none" /></div>
+          <button type="button" onClick={() => setBuilderPack(null)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"><Plus className="w-4 h-4" />New Pack</button>
         </div>
       </div>
 
@@ -149,13 +122,19 @@ export const AdminPackManagement: React.FC = () => {
                         <span className="text-[10px] font-bold text-slate-500">{componentCount} {componentCount === 1 ? 'component' : 'components'}</span>
                       </div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${enabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-200 text-slate-600'}`}>{enabled ? 'Enabled' : 'Disabled'}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${enabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : pack.status === 'Archived' ? 'bg-slate-300 text-slate-700' : 'bg-slate-200 text-slate-600'}`}>{pack.status}</span>
                   </div>
                   <div className="text-[11px] text-slate-500 font-medium">Last updated: {new Date(pack.updatedAt || pack.createdAt).toLocaleDateString()}</div>
                 </div>
                 <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 text-xs">
-                  <button type="button" onClick={() => setViewingPack(pack)} className="flex items-center gap-1 text-slate-600 hover:text-indigo-600 font-bold cursor-pointer"><Eye className="w-3.5 h-3.5" />View</button>
-                  <div className="flex items-center gap-2"><button type="button" onClick={() => openEditBuilder(pack)} title="Edit Pack" className="p-1.5 text-slate-500 hover:text-indigo-600 rounded-lg hover:bg-slate-100 cursor-pointer"><Edit3 className="w-4 h-4" /></button><button type="button" onClick={() => void handleToggleStatus(pack)} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer ${enabled ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'}`}>{enabled ? 'Disable' : 'Enable'}</button></div>
+                  <button type="button" onClick={() => setViewingPack(pack)} className="flex items-center gap-1 text-slate-600 hover:text-indigo-600 font-bold cursor-pointer"><Eye className="w-3.5 h-3.5" />{pack.draftVersionId ? 'View Draft' : 'View'}</button>
+                  {pack.draftVersionId && <button type="button" onClick={() => setViewingPack({ ...pack, structure: pack.publishedStructure, items: pack.publishedItems || [], draftVersionId: undefined })} className="flex items-center gap-1 text-slate-600 hover:text-indigo-600 font-bold cursor-pointer"><Eye className="w-3.5 h-3.5" />View Published</button>}
+                  {pack.status !== 'Archived' && (pack.status === 'Draft' || pack.draftVersionId) && <button type="button" onClick={() => setBuilderPack(pack)} className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"><Edit3 className="w-3.5 h-3.5" />Edit Draft</button>}
+                  {pack.draftVersionId && <button type="button" onClick={() => void runPackAction(() => adminService.publishPack(pack.id, pack.draftVersionId!))} className="text-emerald-700 font-bold cursor-pointer">Publish Draft</button>}
+                  {(pack.status === 'Published' || pack.status === 'Disabled') && !pack.draftVersionId && <button type="button" onClick={() => void runPackAction(() => adminService.createPackVersion(pack.id))} className="text-indigo-600 font-bold cursor-pointer">New Version</button>}
+                  {pack.status === 'Published' && <button type="button" onClick={() => void runPackAction(() => adminService.disablePack(pack.id))} className="text-amber-700 font-bold cursor-pointer">Disable</button>}
+                  {pack.status === 'Disabled' && <button type="button" onClick={() => void runPackAction(() => adminService.enablePack(pack.id))} className="text-emerald-700 font-bold cursor-pointer">Enable</button>}
+                  {pack.status !== 'Archived' && <button type="button" onClick={() => void runPackAction(() => adminService.archivePack(pack.id))} className="flex items-center gap-1 text-rose-700 font-bold cursor-pointer"><Archive className="w-3.5 h-3.5" />Archive</button>}
                 </div>
               </div>
             );
@@ -174,10 +153,11 @@ export const AdminPackManagement: React.FC = () => {
                 <div key={item.id} className="p-2 bg-slate-50 rounded-lg flex items-center justify-between text-xs"><span className="font-bold text-slate-800">{item.label}</span><span className="text-[10px] uppercase text-slate-500">{item.sourceType}</span></div>
               ))}
             </div>
-            <div className="flex justify-end"><button type="button" onClick={() => setViewingPack(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Close</button></div>
+            <div className="flex justify-end gap-2"><button type="button" onClick={() => setViewingPack(null)} className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl cursor-pointer">Close</button>{viewingPack.status !== 'Archived' && (viewingPack.status === 'Draft' || viewingPack.draftVersionId) && <button type="button" onClick={() => { setBuilderPack(viewingPack); setViewingPack(null); }} className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl cursor-pointer">Edit Draft</button>}</div>
           </div>
         </div>
       )}
+      {builderPack !== undefined && <TemplateBuilder mode="admin-pack" initialPack={builderPack} categoriesOverride={categories} onClose={() => setBuilderPack(undefined)} onSaveAdminPack={saveDraft} onPublishAdminPack={publishDraft} />}
     </div>
   );
 };

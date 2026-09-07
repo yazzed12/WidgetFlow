@@ -55,8 +55,8 @@ export function adminPackToBuilderTemplate(pack: AdminPack | null, currentUser: 
   return {
     id: pack?.id || `pack-draft-${Date.now()}`,
     name: pack?.name || '',
-    description: '',
-    categoryId: '',
+    description: pack?.description || '',
+    categoryId: pack?.categoryId || '',
     version: 'v1.0',
     status: 'Draft',
     createdById: currentUser.id,
@@ -85,7 +85,10 @@ export function builderTemplateToAdminPackPayload(template: WidgetTemplate) {
       sectionOrder: section.order,
     },
   })));
-  return { name: template.name.trim(), status: 'Published' as const, structure, items };
+  return {
+    name: template.name.trim(), description: template.description || '', categoryId: template.categoryId || null,
+    structure, items,
+  };
 }
 
 export function cloneAdminPackForTemplate(pack: AdminPack, existingSections: TemplateSection[]): TemplateSection[] {

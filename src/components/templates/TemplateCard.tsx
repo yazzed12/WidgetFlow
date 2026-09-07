@@ -2,6 +2,7 @@ import React from 'react';
 import type { WidgetTemplate } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { StatusBadge } from '../common/StatusBadge';
+import { getBusinessRevisionLabel } from '../../shared/businessRevisionLabel';
 import { DollarSign, Users, BarChart3, Terminal, Layers, Eye, FileSpreadsheet } from 'lucide-react';
 
 interface TemplateCardProps {
@@ -43,7 +44,7 @@ export const TemplateCard: React.FC<TemplateCardProps> = ({ template }) => {
           </div>
           <div className="flex items-center gap-1.5">
             <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded border border-slate-200">
-              {template.version || 'v1.0'}
+              {getBusinessRevisionLabel(template.version) || 'Original'}
             </span>
             <StatusBadge status={template.status} />
           </div>

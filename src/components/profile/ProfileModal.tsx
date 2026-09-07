@@ -1,13 +1,13 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Shield, Building, FileSpreadsheet, Library, CheckCircle2, Clock } from 'lucide-react';
+import { X, Building, FileSpreadsheet, Library, CheckCircle2, Clock } from 'lucide-react';
 
 interface ProfileModalProps {
   onClose: () => void;
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
-  const { currentUser, reports, templates, getPendingApprovalsForUser, getReportsAwaitingMyReview, openResetDemoModal } = useApp();
+  const { currentUser, reports, templates, getPendingApprovalsForUser, getReportsAwaitingMyReview } = useApp();
 
   const userReports = reports.filter((r) => r.createdById === currentUser.id);
   const userTemplates = templates.filter((t) => t.createdById === currentUser.id);
@@ -49,22 +49,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
 
         {/* Body */}
         <div className="p-6 space-y-6 text-xs">
-          {/* Demo Context Alert */}
-          <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between text-indigo-900">
-            <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-indigo-600 shrink-0" />
-              <div>
-                <span className="font-bold">Active Demo Session Account</span>
-                <p className="text-[11px] text-indigo-700">Role permissions & context active for {currentUser.name}</p>
-              </div>
-            </div>
-          </div>
-
           {/* User Details */}
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Account Information</h3>
 
             <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Business User ID</span>
+                <span className="font-mono font-bold text-slate-800 mt-0.5 block">{currentUser.profileCode || 'Pending'}</span>
+              </div>
               <div>
                 <span className="text-[10px] text-slate-400 uppercase font-semibold block">Department</span>
                 <span className="font-bold text-slate-800 flex items-center gap-1 mt-0.5">
@@ -112,17 +105,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-          <button
-            onClick={() => {
-              onClose();
-              openResetDemoModal();
-            }}
-            className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-          >
-            Reset Demo Data
-          </button>
-
+        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end">
           <button
             onClick={onClose}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"

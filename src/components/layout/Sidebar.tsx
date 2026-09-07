@@ -26,6 +26,7 @@ export const Sidebar: React.FC = () => {
     categories,
     templates,
     getCategoryTemplateCount,
+    getTotalCategoryCount,
     getPendingApprovalsForUser,
     getReportsAwaitingMyReview,
     notifications,
@@ -183,7 +184,7 @@ export const Sidebar: React.FC = () => {
         <div>
           <div className="px-3 mb-2 flex items-center justify-between text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
             <span>Categories</span>
-            <span className="text-[10px] text-slate-500">{categories.length} total</span>
+            <span className="text-[10px] text-slate-500">{getTotalCategoryCount()} total</span>
           </div>
 
           <div className="space-y-1">

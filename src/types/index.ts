@@ -5,12 +5,13 @@ export type Role = string;
 
 export type EmploymentStatus = "Active" | "Inactive" | "Resigned" | "Terminated";
 
-export type TemplateStatus = "Draft" | "Pending Approval" | "Approved" | "Rejected";
+export type TemplateStatus = "Draft" | "Pending Approval" | "Approved" | "Rejected" | "Archived" | "Superseded";
 
 export type ReportStatus = "Draft" | "Completed" | "Sent" | "Returned" | "Signed" | "Rejected";
 
 export interface User {
   id: string;
+  profileCode?: string;
   name: string;
   email: string;
   role: Role;
@@ -23,6 +24,9 @@ export interface User {
   roleProtected?: boolean;
   avatarInitials: string;
   department: string;
+  managerUserId?: string;
+  managerName?: string;
+  createdAt?: string;
   avatarBg: string;
   status?: EmploymentStatus;
 }
@@ -298,6 +302,11 @@ export interface UserSignatureProfile {
   createdAt?: string;
   updatedAt?: string;
   isActive?: boolean;
+  typedFontKey?: string;
+  drawingData?: any;
+  signatureAssetId?: string;
+  sourceImageFilename?: string;
+  extractionVersion?: string;
 }
 
 export interface ReportSignatureRecord {
@@ -633,6 +642,7 @@ export interface ReportInstance {
   templateId: string;
   templateName: string;
   templateVersion?: string | number;
+  templateVersionId?: string;
   title: string;
   categoryId: string;
   categoryName: string;
@@ -641,6 +651,10 @@ export interface ReportInstance {
   createdByRole: Role;
   sentToId?: string;
   sentToName?: string;
+  assignments?: ReportAssignment[];
+  signatureAssignments?: ReportSignatureAssignment[];
+  currentSendCycleId?: string;
+  lockedAt?: string;
   sentAt?: string;
   senderNote?: string;
   status: ReportStatus;
@@ -658,6 +672,30 @@ export interface ReportInstance {
   templateSnapshot?: any;
   auditHistory?: ReportAuditRecord[];
   workflowDetails?: any;
+}
+
+export interface ReportSignatureAssignment {
+  id: string;
+  reportId: string;
+  sendCycleId: string;
+  reportAssignmentId: string;
+  recipientUserId: string;
+  signatureFieldKey: string;
+  signatureFieldLabelSnapshot?: string;
+}
+
+export interface ReportAssignment {
+  id: string;
+  sendCycleId?: string;
+  recipientUserId: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  recipientRoleId?: string;
+  recipientRoleKey?: string;
+  recipientRoleName?: string;
+  recipientGovernanceLevel?: string;
+  assignmentStatus?: string;
+  assignmentSequence?: number;
 }
 
 export type Report = ReportInstance;
@@ -710,11 +748,15 @@ export interface Notification {
   userId: string;
   title: string;
   message: string;
-  type: "approval_required" | "template_approved" | "template_rejected" | "comment_added" | "report_received" | "report_returned" | "report_signed" | "report_rejected";
+  type: "approval_required" | "template_approved" | "template_rejected" | "comment_added" | "report_received" | "report_returned" | "report_signed" | "report_fully_signed" | "report_rejected";
   read: boolean;
   timestamp: string;
+  readAt?: string;
   relatedEntityId?: string;
+  relatedTemplateId?: string;
   relatedReportId?: string;
+  sendCycleId?: string;
+  reportAssignmentId?: string;
 }
 
 export type ViewType = "dashboard" | "templates" | "my-requests" | "approvals" | "reports" | "notifications" | "engine-proof" | "admin";
@@ -754,13 +796,22 @@ export interface AdminPack {
   description: string;
   categoryId?: string;
   categoryName?: string;
-  status: 'Draft' | 'Published' | 'Disabled';
+  status: 'Draft' | 'Published' | 'Disabled' | 'Archived';
   createdBy: string;
   createdByName?: string;
   createdAt: string;
   updatedAt: string;
   items: AdminPackItem[];
   structure?: TemplateSection[];
+  publishedVersionId?: string;
+  draftVersionId?: string;
+  versionLabel?: string;
+  draftVersionLabel?: string;
+  hasDraft?: boolean;
+  publishedStructure?: TemplateSection[];
+  draftStructure?: TemplateSection[];
+  publishedItems?: AdminPackItem[];
+  draftItems?: AdminPackItem[];
 }
 
 export interface ContentLibraryItem {
@@ -805,7 +856,6 @@ export interface SystemGeneralSettings {
   allow_return: boolean;
   digital_signature: boolean;
   template_governance: boolean;
-  demo_mode: boolean;
   [key: string]: any;
 }
 
@@ -813,6 +863,11 @@ export interface SystemEffectiveConfig {
   features: Record<string, boolean>;
   elements: Record<string, boolean>;
   settings: SystemGeneralSettings;
+  governance?: {
+    creatorLevel?: GovernanceLevel;
+    strategy?: 'SPECIFIC_USER' | 'ROLE_QUEUE' | 'DIRECT_PUBLISH' | null;
+    isDirectPublish?: boolean;
+  } | null;
 }
 
 export interface AdminAuditRecord {

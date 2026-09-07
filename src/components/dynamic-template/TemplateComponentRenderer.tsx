@@ -1,4 +1,5 @@
 import React from 'react';
+import { getReportBusinessFieldKey } from '../../shared/signatureResolver';
 import type { ReportTemplateField, TemplateComponent, ComponentOption } from '../../types';
 import { TableV2Renderer } from './TableV2Renderer';
 import { RatingInputControl } from './RatingInputControl';
@@ -25,6 +26,7 @@ import {
   resolveKPIStyle,
 } from '../../shared/themeResolver.js';
 import type { TemplateTheme } from '../../types';
+import { AuthenticatedAssetImage } from '../common/AuthenticatedAssetImage';
 
 interface TemplateComponentRendererProps {
   component: ReportTemplateField | TemplateComponent;
@@ -39,6 +41,7 @@ interface TemplateComponentRendererProps {
   signatureHistory?: any[];
   currentUser?: any;
   theme?: TemplateTheme;
+  reportId?: string;
 }
 
 const ImageComponentRenderer: React.FC<{
@@ -71,7 +74,7 @@ const ImageComponentRenderer: React.FC<{
   return (
     <div className={`${colClass} ${alignClass} space-y-1.5 py-2`}>
       {resolvedUrl && !imageError ? (
-        <img
+        <AuthenticatedAssetImage
           src={resolvedUrl}
           alt={alt}
           onError={() => setImageError(true)}
@@ -116,10 +119,15 @@ export const TemplateComponentRenderer: React.FC<TemplateComponentRendererProps>
   signatureHistory,
   currentUser,
   theme,
+  reportId,
 }) => {
-  const fieldKey = component.key || component.id;
+  const fieldKey = getReportBusinessFieldKey(component) || '';
   const label = component.label || fieldKey;
-  const layoutWidth = (component as any).layoutWidth || (component as any).layout?.width || 'full';
+  const layoutWidth = (component as any).layoutWidth
+    || (component as any).layout?.width
+    || (component as any).configuration?.layoutWidth
+    || (component as any).configuration?.layout?.width
+    || 'full';
 
   // Responsive Grid Width Mapping
   const getColSpanClass = (width: string) => {
@@ -347,6 +355,8 @@ export const TemplateComponentRenderer: React.FC<TemplateComponentRendererProps>
           signatureHistory={(component as any).signatureHistory || signatureHistory}
           currentUser={currentUser}
           theme={theme}
+          value={value}
+          reportId={reportId}
         />
       </div>
     );

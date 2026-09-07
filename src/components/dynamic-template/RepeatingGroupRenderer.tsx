@@ -2,6 +2,7 @@ import React from 'react';
 import type { TemplateComponent, ReportTemplateField, TemplateTheme } from '../../types/index.js';
 import { resolveContainerStyle } from '../../shared/themeResolver.js';
 import { Plus, Trash2, Copy, Repeat } from 'lucide-react';
+import { getReportBusinessFieldKey } from '../../shared/signatureResolver';
 
 interface RepeatingGroupRendererProps {
   component: ReportTemplateField | TemplateComponent;
@@ -21,7 +22,7 @@ export const RepeatingGroupRenderer: React.FC<RepeatingGroupRendererProps> = ({
   theme,
 }) => {
   const cStyle = resolveContainerStyle(component, theme);
-  const fieldKey = component.key || component.id;
+  const fieldKey = getReportBusinessFieldKey(component) || '';
   const rgConf = component.repeatingGroupConfig || {};
 
   const groupTitle = rgConf.groupTitle || component.label || 'Repeating Records';
@@ -152,7 +153,7 @@ export const RepeatingGroupRenderer: React.FC<RepeatingGroupRendererProps> = ({
 
             <div className="grid grid-cols-12 gap-3">
               {defaultChildComponents.map((childComp) => {
-                const cKey = childComp.key || childComp.id;
+                const cKey = getReportBusinessFieldKey(childComp) || '';
                 const cVal = itemData[cKey];
                 const widthClass = childComp.layoutWidth === 'half' ? 'col-span-6' : childComp.layoutWidth === 'third' ? 'col-span-4' : 'col-span-12';
 

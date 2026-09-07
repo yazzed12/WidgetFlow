@@ -1,7 +1,5 @@
 import React from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { setApiDemoUserId } from './services/apiService';
-import { RoleSwitcher } from './components/layout/RoleSwitcher';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
 import { Toast } from './components/common/Toast';
@@ -21,7 +19,6 @@ import { ReturnReportModal } from './components/reports/ReturnReportModal';
 import { RejectReportModal } from './components/reports/RejectReportModal';
 import { SignReportModal } from './components/reports/SignReportModal';
 import { ProfileModal } from './components/profile/ProfileModal';
-import { ResetDemoModal } from './components/common/ResetDemoModal';
 
 import { DashboardPage } from './pages/DashboardPage';
 import { TemplatesPage } from './pages/TemplatesPage';
@@ -33,6 +30,13 @@ import { EngineProofPage } from './pages/EngineProofPage';
 
 import { SystemConfigProvider } from './context/SystemConfigContext';
 import { AdminLayout } from './components/admin/AdminLayout';
+import { AuthProvider } from './features/auth/AuthContext';
+import { useAuth } from './features/auth/useAuth';
+import { AuthLoadingScreen } from './features/auth/components/AuthLoadingScreen';
+import { LoginPage } from './features/auth/LoginPage';
+import { LOGIN_PATH, navigateTo, usePathname } from './features/auth/authRouting';
+import { resolveAuthView } from './features/auth/authGate';
+import { principalToAppUser } from './features/auth/authTypes';
 
 const MainContent: React.FC = () => {
   const { activeView, hasPermission } = useApp();
@@ -72,7 +76,6 @@ const GlobalModals: React.FC = () => {
     closeAddTemplateModal,
     isChatDrawerOpen,
     isProfileModalOpen,
-    isResetDemoModalOpen,
     toggleChatDrawer,
     selectedTemplateForDetail,
     closeTemplateDetail,
@@ -93,7 +96,6 @@ const GlobalModals: React.FC = () => {
     selectedReportForSign,
     closeSignReportModal,
     closeProfileModal,
-    closeResetDemoModal,
     hasPermission,
   } = useApp();
 
@@ -175,10 +177,6 @@ const GlobalModals: React.FC = () => {
         <ProfileModal onClose={closeProfileModal} />
       )}
 
-      {isResetDemoModalOpen && (
-        <ResetDemoModal onClose={closeResetDemoModal} />
-      )}
-
       {isChatDrawerOpen && (
         <RequestChatDrawer onClose={() => toggleChatDrawer(false)} />
       )}
@@ -187,23 +185,14 @@ const GlobalModals: React.FC = () => {
 };
 
 const AppShell: React.FC = () => {
-  const { currentUser } = useApp();
+  const { isProtectedAdmin } = useAuth();
 
-  React.useEffect(() => {
-    if (currentUser?.id) {
-      setApiDemoUserId(currentUser.id);
-    }
-  }, [currentUser?.id]);
-
-  if (currentUser.roleKey === 'admin' && currentUser.roleType === 'System' && currentUser.roleProtected) {
+  if (isProtectedAdmin) {
     return <AdminLayout />;
   }
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 font-sans overflow-hidden">
-      {/* Top Demo Mode Banner */}
-      <RoleSwitcher />
-
       {/* Main Application Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar */}
@@ -228,12 +217,45 @@ const AppShell: React.FC = () => {
   );
 };
 
-export default function App() {
+const WidgetFlowApplication: React.FC = () => {
+  const { principal } = useAuth();
+  const appUser = React.useMemo(
+    () => principal ? principalToAppUser(principal) : null,
+    [principal],
+  );
+  if (!appUser) return <AuthLoadingScreen />;
+
   return (
     <SystemConfigProvider>
-      <AppProvider>
+      <AppProvider key={appUser.id} authenticatedPrincipal={appUser}>
         <AppShell />
       </AppProvider>
     </SystemConfigProvider>
+  );
+};
+
+const AuthenticatedEntry: React.FC = () => {
+  const { status } = useAuth();
+  const pathname = usePathname();
+  const view = resolveAuthView(status);
+
+  React.useEffect(() => {
+    if (status === 'authenticated' && pathname === LOGIN_PATH) {
+      navigateTo('/', true);
+    } else if ((status === 'unauthenticated' || status === 'blocked') && pathname !== LOGIN_PATH) {
+      navigateTo(LOGIN_PATH, true);
+    }
+  }, [pathname, status]);
+
+  if (view === 'application') return <WidgetFlowApplication />;
+  if (view === 'login') return <LoginPage />;
+  return <AuthLoadingScreen />;
+};
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthenticatedEntry />
+    </AuthProvider>
   );
 }

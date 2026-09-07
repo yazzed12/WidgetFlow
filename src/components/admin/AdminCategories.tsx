@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useSystemConfig } from '../../context/SystemConfigContext';
-import { apiService } from '../../services/apiService';
+import { adminService } from '../../features/admin/services/adminService';
 import type { Category } from '../../types';
 import { AdminInfoTooltip } from './AdminInfoTooltip';
+import { useApp } from '../../context/AppContext';
 import {
   FolderKanban,
   FolderPlus,
@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 export const AdminCategories: React.FC = () => {
-  const { createAdminCategory, updateAdminCategory } = useSystemConfig();
+  const { getCategoryTemplateCount } = useApp();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,7 +33,7 @@ export const AdminCategories: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getAdminCategories();
+      const data = await adminService.categories();
       setCategories(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Failed to fetch admin categories:', err);
@@ -57,7 +57,7 @@ export const AdminCategories: React.FC = () => {
     try {
       setIsSubmitting(true);
       setError(null);
-      await createAdminCategory({ name: catName.trim(), description: catDesc.trim() });
+      await adminService.createCategory({ name: catName.trim(), description: catDesc.trim(), status: 'Active' });
       await fetchCategories();
       setShowCreateModal(false);
       setCatName('');
@@ -75,9 +75,10 @@ export const AdminCategories: React.FC = () => {
 
     try {
       setIsSubmitting(true);
-      await updateAdminCategory(categoryToEdit.id, {
+      await adminService.updateCategory(categoryToEdit.id, {
         name: editName.trim(),
         description: editDesc.trim(),
+        status: categoryToEdit.status || 'Active',
       });
       await fetchCategories();
       setCategoryToEdit(null);
@@ -91,7 +92,11 @@ export const AdminCategories: React.FC = () => {
   const handleToggleStatus = async (cat: Category) => {
     const targetStatus = (cat.status || 'Active') === 'Active' ? 'Inactive' : 'Active';
     try {
-      await updateAdminCategory(cat.id, { status: targetStatus });
+      await adminService.updateCategory(cat.id, {
+        name: cat.name,
+        description: cat.description || '',
+        status: targetStatus,
+      });
       await fetchCategories();
     } catch (err: any) {
       alert(err.message || 'Failed to update category status');
@@ -153,7 +158,7 @@ export const AdminCategories: React.FC = () => {
                         />
                       </td>
                       <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate font-medium">{c.description || 'No description provided.'}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-700">{c.templateCount || 0} templates</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-700">{getCategoryTemplateCount(c.id)} templates</td>
                       <td className="py-3.5 px-4">
                         {isActive ? (
                           <span className="flex items-center gap-1 text-emerald-700 font-bold">
@@ -183,11 +188,10 @@ export const AdminCategories: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleToggleStatus(c)}
-                            className={`px-3 py-1 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
-                              isActive
+                            className={`px-3 py-1 rounded-lg font-bold text-xs transition-colors cursor-pointer ${isActive
                                 ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
                                 : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
-                            }`}
+                              }`}
                           >
                             {isActive ? 'Disable' : 'Enable'}
                           </button>

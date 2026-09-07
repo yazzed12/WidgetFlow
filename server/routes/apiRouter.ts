@@ -5,18 +5,13 @@ import { reportRouter } from './reportRoutes.js';
 import { assetRouter } from './assetRoutes.js';
 import { workflowRoutes } from './workflowRoutes.js';
 import { intakeRoutes } from './intakeRoutes.js';
-import { notificationController, demoController } from '../controllers/notificationController.js';
+import { notificationController } from '../controllers/notificationController.js';
 
 import { adminRouter } from './adminRoutes.js';
 import { authorizationService } from '../services/authorizationService.js';
 import { adminService } from '../services/adminService.js';
 
 export const apiRouter = Router();
-
-// Health
-apiRouter.get('/health', (req, res) => {
-  res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
-});
 
 apiRouter.get('/authorization/me', (req: any, res) => {
   res.json({ success: true, data: authorizationService.resolveUser(req.user!.id) });
@@ -176,6 +171,3 @@ apiRouter.get('/content-library', (req: any, res) => {
   const items = dbRepository.getAvailableContentItems();
   res.json({ success: true, data: items });
 });
-
-// Demo Reset
-apiRouter.post('/demo/reset', demoController.resetDemo);

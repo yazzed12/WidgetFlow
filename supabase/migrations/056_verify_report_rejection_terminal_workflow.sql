@@ -1,0 +1,15 @@
+select
+  exists (select 1 from private.widgetflow_schema_migrations where id = '056_report_rejection_terminal_workflow') as migration_056_exists,
+  to_regprocedure('public.reject_report(uuid,uuid,text)') is not null as reject_rpc_exists,
+  has_function_privilege('authenticated', 'public.reject_report(uuid,uuid,text)', 'EXECUTE') as authenticated_can_execute,
+  not has_function_privilege('anon', 'public.reject_report(uuid,uuid,text)', 'EXECUTE') as anon_cannot_execute,
+  pg_get_functiondef('public.reject_report(uuid,uuid,text)'::regprocedure) like '%security definer%' as security_definer,
+  pg_get_functiondef('public.reject_report(uuid,uuid,text)'::regprocedure) like '%set search_path = ''''' as hardened_search_path,
+  pg_get_functiondef('public.reject_report(uuid,uuid,text)'::regprocedure) like '%for update%' as row_locks,
+  pg_get_functiondef('public.reject_report(uuid,uuid,text)'::regprocedure) like '%assignment_status <> ''pending''%' as pending_guard,
+  pg_get_functiondef('public.reject_report(uuid,uuid,text)'::regprocedure) not like '%report_signature_assignments%' as no_signer_dependency,
+  pg_get_functiondef('public.reject_report(uuid,uuid,text)'::regprocedure) like '%status = ''rejected''%' as terminal_report_state,
+  pg_get_functiondef('public.reject_report(uuid,uuid,text)'::regprocedure) like '%assignment_status = ''cancelled''%' as pending_assignments_cancelled,
+  pg_get_functiondef('public.reject_report(uuid,uuid,text)'::regprocedure) like '%REPORT_REJECTED%' as audit_and_notifications,
+  to_regprocedure('public.return_report(uuid,uuid,text)') is not null as return_rpc_preserved,
+  pg_get_functiondef('public.return_report(uuid,uuid,text)'::regprocedure) not like '%REPORT_ALREADY_PARTIALLY_SIGNED%' as return_partial_sign_guard_absent;

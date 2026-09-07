@@ -20,6 +20,7 @@ interface BuilderHeaderProps {
   onPreview: () => void;
   onSaveDraft: () => void;
   onSavePack?: () => void;
+  onPublishPack?: () => void;
   isEditingPack?: boolean;
   onSubmitForApproval: () => void;
   onCreateVersion?: () => void;
@@ -47,6 +48,7 @@ export const BuilderHeader: React.FC<BuilderHeaderProps> = ({
   onPreview,
   onSaveDraft,
   onSavePack,
+  onPublishPack,
   isEditingPack = false,
   onSubmitForApproval,
   onCreateVersion,
@@ -59,9 +61,9 @@ export const BuilderHeader: React.FC<BuilderHeaderProps> = ({
   const isAdminPackMode = mode === 'admin-pack';
 
   const [submissionAction, setSubmissionAction] = React.useState<{ label: string; helpText: string; isDirect: boolean }>({
-    label: governanceLevel === 'Director' ? 'Publish' : 'Submit for Approval',
+    label: 'Submit for Approval',
     helpText: '',
-    isDirect: governanceLevel === 'Director',
+    isDirect: false,
   });
 
   React.useEffect(() => {
@@ -101,7 +103,7 @@ export const BuilderHeader: React.FC<BuilderHeaderProps> = ({
             className="bg-slate-800/80 border border-slate-700/80 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs font-bold text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 w-48 sm:w-64 transition-all"
           />
 
-          {!isAdminPackMode && (
+          {(
             <select
               value={categoryId}
               onChange={(e) => onCategoryChange(e.target.value)}
@@ -217,6 +219,16 @@ export const BuilderHeader: React.FC<BuilderHeaderProps> = ({
           >
             <Save className="w-3.5 h-3.5" />
             <span>{isSaving ? 'Saving...' : isEditingPack ? 'Save Changes' : 'Save Pack'}</span>
+          </button>
+        )}
+        {isAdminPackMode && onPublishPack && isEditingPack && (
+          <button
+            onClick={onPublishPack}
+            disabled={isSaving}
+            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>{isSaving ? 'Publishing...' : 'Publish'}</span>
           </button>
         )}
       </div>

@@ -97,7 +97,7 @@ export const authorizationService = {
   },
 
   requireAnyPermission(userOrId: ServerUser | string, permissions: PermissionKey[]): ServerUser {
-    const user = typeof userOrId === 'string' ? this.resolveUser(userOrId) : this.resolveUser(userOrId.id);
+    const user = typeof userOrId === 'string' ? this.resolveUser(userOrId) : userOrId;
     if (!user || !user.roleActive || !permissions.some((permission) => user.permissions.includes(permission))) {
       throw new AppError(`One of these permissions is required: ${permissions.join(', ')}.`, 403, 'PERMISSION_DENIED');
     }
@@ -109,7 +109,6 @@ export const authorizationService = {
     const user = typeof userOrId === 'string' ? this.resolveUser(userOrId) : this.resolveUser(userOrId.id);
     return Boolean(
       user &&
-      user.legacyRole === 'Admin' &&
       user.roleKey === 'admin' &&
       user.roleType === 'System' &&
       user.roleProtected

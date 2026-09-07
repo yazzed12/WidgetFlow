@@ -2,6 +2,7 @@ import React from 'react';
 import type { WidgetTemplate, DynamicTemplate, ReportTemplateField, TemplateComponent, TemplateSection } from '../../types';
 import { TemplateComponentRenderer } from './TemplateComponentRenderer';
 import { Layers } from 'lucide-react';
+import { getReportBusinessFieldKey } from '../../shared/signatureResolver';
 
 interface DynamicTemplateRendererProps {
   template: WidgetTemplate | DynamicTemplate;
@@ -13,6 +14,7 @@ interface DynamicTemplateRendererProps {
   activeSignatures?: any[];
   signatureHistory?: any[];
   currentUser?: any;
+  reportId?: string;
 }
 
 export const DynamicTemplateRenderer: React.FC<DynamicTemplateRendererProps> = ({
@@ -25,32 +27,44 @@ export const DynamicTemplateRenderer: React.FC<DynamicTemplateRendererProps> = (
   activeSignatures,
   signatureHistory,
   currentUser,
+  reportId,
 }) => {
-  // Extract all components/fields
+  // Structured snapshot sections are authoritative for order and layout. Older
+  // snapshots may only have a flat fields/components array, so retain that
+  // compatibility path and group by the persisted section name.
+  const candidateComponents = (template as any).components;
+  const candidateFields = (template as any).fields;
   const rawFields: Array<ReportTemplateField | TemplateComponent> =
-    (template as any).components || (template as any).fields || [];
-
-  // Group components by section
+    (Array.isArray(candidateComponents) && candidateComponents.length > 0
+      ? candidateComponents
+      : Array.isArray(candidateFields) ? candidateFields : []);
+  const structuredSections = [
+    (template as any).sections,
+    (template as any).dynamicSections,
+  ].find((sections) => Array.isArray(sections) && sections.some((section: any) => Array.isArray(section?.components)));
   const sectionMap = new Map<string, Array<ReportTemplateField | TemplateComponent>>();
 
-  const explicitSections: string[] =
-    (template as any).sections && Array.isArray((template as any).sections)
-      ? (template as any).sections
+  if (Array.isArray(structuredSections)) {
+    structuredSections.forEach((section: any, index: number) => {
+      if (!Array.isArray(section?.components)) return;
+      const title = typeof section === 'string'
+        ? section
+        : section.title || section.name || section.id || `Section ${index + 1}`;
+      sectionMap.set(String(title), section.components);
+    });
+  }
+
+  if (sectionMap.size === 0) {
+    const explicitSections: string[] = (template as any).sections && Array.isArray((template as any).sections)
+      ? (template as any).sections.map((section: any) => typeof section === 'string' ? section : section?.title || section?.name || section?.id).filter(Boolean)
       : (template as any).dynamicSections?.map((s: TemplateSection) => s.title) || [];
-
-  explicitSections.forEach((secName) => {
-    if (!sectionMap.has(secName)) {
-      sectionMap.set(secName, []);
-    }
-  });
-
-  rawFields.forEach((f) => {
-    const secName = f.section || 'General Information';
-    if (!sectionMap.has(secName)) {
-      sectionMap.set(secName, []);
-    }
-    sectionMap.get(secName)!.push(f);
-  });
+    explicitSections.forEach((secName) => sectionMap.set(secName, []));
+    rawFields.forEach((f) => {
+      const secName = f.section || 'General Information';
+      if (!sectionMap.has(secName)) sectionMap.set(secName, []);
+      sectionMap.get(secName)!.push(f);
+    });
+  }
 
   const handleComponentChange = (key: string, newVal: any) => {
     if (onChange) {
@@ -98,14 +112,17 @@ export const DynamicTemplateRenderer: React.FC<DynamicTemplateRendererProps> = (
           {/* Section Components Grid */}
           <div className="grid grid-cols-12 gap-4">
             {comps.map((comp) => {
-              const fieldKey = comp.key || comp.id;
-              const val = values[fieldKey] !== undefined ? values[fieldKey] : values[comp.id];
-              const errorMsg = errors[fieldKey] || errors[comp.id];
+              const fieldKey = getReportBusinessFieldKey(comp) || '';
+              if (mode === 'edit' && !fieldKey) {
+                return <div key={comp.id} className="col-span-12 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg">This field is missing a business key and cannot accept Report data.</div>;
+              }
+              const val = fieldKey ? values[fieldKey] : undefined;
+              const errorMsg = fieldKey ? errors[fieldKey] : undefined;
 
               return (
                 <TemplateComponentRenderer
                   key={comp.id || fieldKey}
-                  component={comp}
+                  component={fieldKey === comp.key ? comp : { ...comp, key: fieldKey } as any}
                   value={val}
                   mode={mode}
                   onChange={handleComponentChange}
@@ -114,6 +131,7 @@ export const DynamicTemplateRenderer: React.FC<DynamicTemplateRendererProps> = (
                   activeSignatures={activeSignatures}
                   signatureHistory={signatureHistory}
                   currentUser={currentUser}
+                  reportId={reportId}
                 />
               );
             })}

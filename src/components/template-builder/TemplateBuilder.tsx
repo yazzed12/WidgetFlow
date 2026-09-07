@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { WidgetTemplate, TemplateSection, TemplateComponent, BuilderValidationIssue, ContentPack, ContentPackCategory, AdminPack, ContentLibraryItem } from '../../types';
+import type { WidgetTemplate, TemplateSection, TemplateComponent, BuilderValidationIssue, ContentPack, ContentPackCategory, AdminPack, ContentLibraryItem, Category } from '../../types';
 import { getBuilderValidationIssues } from '../../utils/builderValidation';
 import { useApp } from '../../context/AppContext';
 import { BuilderHeader } from './BuilderHeader';
@@ -17,8 +17,7 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { TemplatePreviewModal } from './TemplatePreviewModal';
 import { QuickGuideOverlay } from './QuickGuideOverlay';
 import { generateStableFieldKey } from './keyGenerator';
-import { apiService } from '../../services/apiService';
-import { BUILT_IN_CONTENT_PACKS } from '../../data/builtInContentPacks';
+import { templateService } from '../../features/templates/services/templateService';
 import { cloneContentPackSections } from '../../shared/contentPackUtils';
 import { ContentPackPreviewModal } from './ContentPackPreviewModal';
 import { SaveContentPackModal } from './SaveContentPackModal';
@@ -41,12 +40,15 @@ interface TemplateBuilderProps {
   initialTemplate?: WidgetTemplate | null;
   initialPack?: AdminPack | null;
   mode?: 'template' | 'admin-pack';
+  onSaveAdminPack?: (payload: ReturnType<typeof builderTemplateToAdminPackPayload>, initialPack: AdminPack | null) => Promise<void>;
+  onPublishAdminPack?: (payload: ReturnType<typeof builderTemplateToAdminPackPayload>, initialPack: AdminPack | null) => Promise<void>;
+  categoriesOverride?: Category[];
   onClose: () => void;
-  onPackSaved?: (pack: AdminPack) => void;
 }
 
-export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplate, initialPack = null, mode = 'template', onClose, onPackSaved }) => {
-  const { templates, categories, currentUser, refreshTemplates, setActiveView, hasPermission } = useApp();
+export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplate, initialPack = null, mode = 'template', onSaveAdminPack, onPublishAdminPack, categoriesOverride, onClose }) => {
+  const { templates, categories: appCategories, currentUser, refreshTemplates, setActiveView, hasPermission } = useApp();
+  const categories = categoriesOverride ?? appCategories;
   const { isFeatureEnabled, isElementEnabled } = useSystemConfig();
   const isAdminPackMode = mode === 'admin-pack';
   const allowedStudioTabs = new Set<StudioTab>([
@@ -83,7 +85,7 @@ export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplat
       id: `tpl-${Date.now()}`,
       name: 'New Report Template',
       description: '',
-      categoryId: activeCats[0]?.id || categories[0]?.id || 'cat-finance',
+      categoryId: activeCats[0]?.id || categories[0]?.id || '',
       version: 'v1.0',
     status: 'Draft',
     createdById: currentUser.id,
@@ -155,42 +157,23 @@ export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplat
   const [activeHelpType, setActiveHelpType] = useState<string | null>(null);
 
   // Content Pack States
-  const [contentPacks, setContentPacks] = useState<ContentPack[]>(BUILT_IN_CONTENT_PACKS);
+  // Personal/user Pack persistence is intentionally deferred until its own Supabase cutover.
+  const [contentPacks] = useState<ContentPack[]>([]);
   const [previewContentPack, setPreviewContentPack] = useState<ContentPack | null>(null);
   const [savePackSection, setSavePackSection] = useState<TemplateSection | null>(null);
   const [addToPackTool, setAddToPackTool] = useState<ToolboxItem | null>(null);
 
-  useEffect(() => {
-    apiService.getContentPacks()
-      .then((packs) => {
-        if (Array.isArray(packs) && packs.length > 0) {
-          setContentPacks(packs);
-        }
-      })
-      .catch(() => {});
-  }, []);
+  const personalPacksUnavailable = (): never => {
+    throw new Error('Personal Pack changes are unavailable until the personal Pack migration is complete.');
+  };
 
-  const handleAddToExistingPack = async (packId: string, payload: { sectionId?: string; newSectionName?: string; componentDef: any }) => {
-    await apiService.addComponentToPack(packId, payload);
-    const updatedPacks = await apiService.getContentPacks();
-    setContentPacks(updatedPacks);
+  const handleAddToExistingPack = async (_packId: string, _payload: { sectionId?: string; newSectionName?: string; componentDef: any }) => {
+    personalPacksUnavailable();
   };
 
   const handleCreateNewPackAndAdd = async (packData: { name: string; category: ContentPackCategory; description: string; firstSectionName: string; componentDef: any }) => {
-    await apiService.createContentPack({
-      name: packData.name,
-      category: packData.category,
-      description: packData.description,
-      ownerUserId: currentUser.id,
-      sourceType: 'user',
-      sections: [{
-        title: packData.firstSectionName || 'Main Content',
-        description: '',
-        components: [packData.componentDef],
-      }],
-    });
-    const updatedPacks = await apiService.getContentPacks();
-    setContentPacks(updatedPacks);
+    void packData;
+    personalPacksUnavailable();
   };
 
   // Insert Content Pack
@@ -221,28 +204,14 @@ export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplat
 
   // Save Custom Content Pack
   const handleSaveCustomContentPack = async (data: { name: string; category: ContentPackCategory; description: string; section: TemplateSection }) => {
-    await apiService.createContentPack({
-      name: data.name,
-      category: data.category,
-      description: data.description,
-      sections: [{
-        title: data.section.title,
-        description: data.section.description,
-        components: data.section.components || [],
-      }],
-      ownerUserId: currentUser.id,
-      sourceType: 'user',
-    });
-
-    const updatedPacks = await apiService.getContentPacks();
-    setContentPacks(updatedPacks);
+    void data;
+    personalPacksUnavailable();
   };
 
   // Delete User Content Pack
   const handleDeleteContentPack = async (packId: string) => {
-    await apiService.deleteContentPack(packId);
-    const updatedPacks = await apiService.getContentPacks();
-    setContentPacks(updatedPacks);
+    void packId;
+    personalPacksUnavailable();
   };
 
   // Insert Admin Standard Pack as a detached snapshot. Future Pack edits cannot mutate this template.
@@ -774,7 +743,7 @@ export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplat
       setIsSaving(true);
       setBuilderError(null);
 
-      const saved = await apiService.saveTemplateDraft(templateState);
+      const saved = await templateService.saveDraft(templateState);
       await refreshTemplates();
       setTemplateState(setupInitialState(saved));
       setIsDirty(false);
@@ -786,26 +755,36 @@ export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplat
   };
 
   const handleSaveAdminPack = async () => {
-    if (!templateState.name.trim()) {
-      setBuilderError('Pack name is required.');
-      return;
-    }
-    const payload = builderTemplateToAdminPackPayload(templateState);
-    if (payload.items.length === 0) {
-      setBuilderError('Add at least one component to the Pack canvas.');
+    if (!onSaveAdminPack) {
+      setBuilderError('Pack persistence is unavailable.');
       return;
     }
     try {
       setIsSaving(true);
       setBuilderError(null);
-      const saved = initialPack
-        ? await apiService.updateAdminPack(initialPack.id, payload)
-        : await apiService.createAdminPack(payload);
-      setTemplateState(adminPackToBuilderTemplate(saved, currentUser));
+      await onSaveAdminPack(builderTemplateToAdminPackPayload(templateState), initialPack);
       setIsDirty(false);
-      onPackSaved?.(saved);
+      onClose();
     } catch (err: any) {
-      setBuilderError(err.message || 'Unable to save Pack.');
+      setBuilderError(err.message || 'Failed to save Standard Pack draft.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePublishAdminPack = async () => {
+    if (!onPublishAdminPack || !initialPack?.draftVersionId) {
+      setBuilderError('Save a draft before publishing this Standard Pack.');
+      return;
+    }
+    try {
+      setIsSaving(true);
+      setBuilderError(null);
+      await onPublishAdminPack(builderTemplateToAdminPackPayload(templateState), initialPack);
+      setIsDirty(false);
+      onClose();
+    } catch (err: any) {
+      setBuilderError(err.message || 'Failed to publish Standard Pack.');
     } finally {
       setIsSaving(false);
     }
@@ -820,8 +799,8 @@ export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplat
       setIsSaving(true);
       setBuilderError(null);
 
-      const saved = await apiService.saveTemplateDraft(templateState);
-      await apiService.submitTemplate(saved.id);
+      const saved = await templateService.saveDraft(templateState);
+      await templateService.submit(saved.id);
       await refreshTemplates();
 
       setIsDirty(false);
@@ -869,13 +848,14 @@ export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplat
         onPreview={() => setShowPreviewModal(true)}
         onSaveDraft={handleSaveDraft}
         onSavePack={handleSaveAdminPack}
+        onPublishPack={isAdminPackMode ? handlePublishAdminPack : undefined}
         isEditingPack={Boolean(initialPack)}
         onSubmitForApproval={handleSubmitForApproval}
         onCreateVersion={async () => {
           setIsSaving(true);
           try {
-            const newVersionDraft = await apiService.createTemplateVersion(templateState.id);
-            setTemplateState(newVersionDraft);
+            const newVersionDraft = await templateService.createRevision(templateState.id) as WidgetTemplate;
+            setTemplateState(setupInitialState(newVersionDraft));
             setSelectedComponentId(null);
             setIsDirty(false);
             setBuilderError(null);
@@ -978,12 +958,8 @@ export const TemplateBuilder: React.FC<TemplateBuilderProps> = ({ initialTemplat
                 onInsertPack={handleInsertContentPack}
                 onPreviewPack={(pack) => setPreviewContentPack(pack)}
                 onEditPack={(pack) => {
-                  const newName = window.prompt('Update Content Pack Name (affects future insertions only):', pack.name);
-                  if (newName && newName.trim()) {
-                    apiService.updateContentPack(pack.id, { name: newName.trim() })
-                      .then(() => apiService.getContentPacks())
-                      .then((updated) => setContentPacks(updated));
-                  }
+                  void pack;
+                  setBuilderError('Personal Pack changes are unavailable until the personal Pack migration is complete.');
                 }}
                 onDeletePack={handleDeleteContentPack}
                 onInsertAdminPack={handleInsertAdminPack}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useSystemConfig } from '../../context/SystemConfigContext';
-import { apiService } from '../../services/apiService';
+import { adminService } from '../../features/admin/services/adminService';
+import type { AdminOverviewSummary } from '../../features/admin/types/adminTypes';
 import type { AdminViewType } from '../../types';
 import {
   Users,
@@ -19,26 +19,17 @@ interface AdminOverviewProps {
 }
 
 export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigateTab }) => {
-  const { config } = useSystemConfig();
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [userCount, setUserCount] = useState<number>(4);
-  const [categoryCount, setCategoryCount] = useState<number>(4);
-  const [publishedPackCount, setPublishedPackCount] = useState<number>(0);
-  const [enabledContentCount, setEnabledContentCount] = useState<number>(0);
+  const [summary, setSummary] = useState<AdminOverviewSummary | null>(null);
 
   useEffect(() => {
-    apiService.getAdminAuditLog().then(setAuditLogs).catch((err) => console.error('Overview audit log fetch failed:', err));
-    apiService.getAdminUsers().then((u) => setUserCount(u.filter((x: any) => x.status !== 'Inactive').length)).catch((err) => console.error('Overview users fetch failed:', err));
-    apiService.getAdminCategories().then((c) => setCategoryCount(c.length)).catch((err) => console.error('Overview categories fetch failed:', err));
-    apiService.getAdminPacks().then((packs) => setPublishedPackCount(packs.filter((p) => p.status === 'Published').length)).catch((err) => console.error('Overview packs fetch failed:', err));
-    apiService.getAdminContentLibrary().then((items) => setEnabledContentCount(items.filter((i) => i.enabled).length)).catch((err) => console.error('Overview content fetch failed:', err));
+    adminService.overview().then(setSummary).catch((err) => console.error('Overview fetch failed:', err));
   }, []);
 
-  const featureKeys = Object.keys(config.features || {});
-  const enabledFeatures = featureKeys.filter((k) => config.features[k]);
-
-  const elementKeys = Object.keys(config.elements || {});
-  const enabledElements = elementKeys.filter((k) => config.elements[k]);
+  const auditLogs = summary?.recentAudit ?? [];
+  const userCount = summary?.activeUserCount ?? 0;
+  const categoryCount = summary?.activeCategoryCount ?? 0;
+  const publishedPackCount = summary?.publishedPackCount ?? 0;
+  const enabledContentCount = summary?.enabledContentItemCount ?? 0;
 
   return (
     <div className="space-y-6 animate-fade-in p-6">
@@ -91,7 +82,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigateTab }) =
             <Sliders className="w-4 h-4 text-amber-600" />
           </div>
           <div className="text-2xl font-black text-slate-900">
-            {enabledFeatures.length}
+            {summary?.enabledFeatureCount ?? 0}
           </div>
           <p className="text-[10px] text-slate-500">Active Studio modules</p>
         </div>
@@ -102,7 +93,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigateTab }) =
             <Shapes className="w-4 h-4 text-blue-600" />
           </div>
           <div className="text-2xl font-black text-slate-900">
-            {enabledElements.length}
+            {summary?.enabledElementCount ?? 0}
           </div>
           <p className="text-[10px] text-slate-500">Permitted creator tools</p>
         </div>
@@ -112,7 +103,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigateTab }) =
             <span className="text-[11px] font-bold uppercase tracking-wider">Config Changes</span>
             <History className="w-4 h-4 text-rose-600" />
           </div>
-          <div className="text-2xl font-black text-slate-900">{auditLogs.length}</div>
+          <div className="text-2xl font-black text-slate-900">{summary?.auditEventCount ?? 0}</div>
           <p className="text-[10px] text-slate-500">Recorded audit events</p>
         </div>
 
@@ -139,7 +130,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigateTab }) =
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
                 <div className="text-xs font-bold text-slate-900">Template Studio Modules</div>
                 <div className="text-xs text-slate-600">
-                  {enabledFeatures.length} of {featureKeys.length || 8} modules enabled across all user roles.
+                  {summary?.enabledFeatureCount ?? 0} of {summary?.featureCount ?? 0} modules enabled across all user roles.
                 </div>
                 <button
                   type="button"
@@ -153,7 +144,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigateTab }) =
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
                 <div className="text-xs font-bold text-slate-900">Creator Toolbox Elements</div>
                 <div className="text-xs text-slate-600">
-                  {enabledElements.length} of {elementKeys.length || 23} input & component tools enabled for creators.
+                  {summary?.enabledElementCount ?? 0} of {summary?.elementCount ?? 0} input & component tools enabled for creators.
                 </div>
                 <button
                   type="button"
@@ -181,7 +172,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ onNavigateTab }) =
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
                 <div className="text-xs font-bold text-slate-900">Users & Access</div>
                 <div className="text-xs text-slate-600">
-                  {userCount} user identities (1 Employee, 1 Manager, 1 Director, 1 System Admin).
+                  {userCount} active user identities in the live directory.
                 </div>
                 <button
                   type="button"

@@ -7,6 +7,7 @@ import {
 } from '../../shared/table-v2/index.js';
 import { resolveTableStyle } from '../../shared/themeResolver.js';
 import { Plus, Trash2, Copy, Table as TableIcon, Check } from 'lucide-react';
+import { getReportBusinessFieldKey } from '../../shared/signatureResolver';
 
 interface TableV2RendererProps {
   component: TemplateComponent;
@@ -26,7 +27,7 @@ export const TableV2Renderer: React.FC<TableV2RendererProps> = ({
   theme,
 }) => {
   const tblStyle = resolveTableStyle(component, theme);
-  const fieldKey = component.key || component.id;
+  const fieldKey = getReportBusinessFieldKey(component) || '';
   const label = component.label || fieldKey;
 
   const cols: TableColumnConfig[] = (component.columns || []).map(normalizeTableColumnConfig);

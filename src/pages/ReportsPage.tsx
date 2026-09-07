@@ -12,6 +12,7 @@ import {
   Shield,
   FileCheck,
   Edit3,
+  XCircle,
 } from 'lucide-react';
 
 type TabType = 'My Reports' | 'Received' | 'Draft' | 'Awaiting Signature' | 'Signed' | 'Rejected';
@@ -26,6 +27,7 @@ export const ReportsPage: React.FC = () => {
     openSendReportModal,
     openReturnReportModal,
     openSignReportModal,
+    openRejectReportModal,
     openFillReportModal,
     markReportCompleted,
     hasPermission,
@@ -40,21 +42,21 @@ export const ReportsPage: React.FC = () => {
       case 'My Reports':
         return reports.filter((r) => r.createdById === currentUser.id);
       case 'Received':
-        return reports.filter((r) => r.sentToId === currentUser.id);
+        return reports.filter((r) => r.assignments?.some((a) => a.recipientUserId === currentUser.id) || r.sentToId === currentUser.id);
       case 'Draft':
         return reports.filter((r) => r.createdById === currentUser.id && r.status === 'Draft');
       case 'Awaiting Signature':
-        return reports.filter((r) => r.sentToId === currentUser.id && r.status === 'Sent');
+        return reports.filter((r) => (r.assignments?.some((a) => a.recipientUserId === currentUser.id) || r.sentToId === currentUser.id) && r.status === 'Sent');
       case 'Signed':
         return reports.filter(
           (r) =>
-            (r.createdById === currentUser.id || r.sentToId === currentUser.id || hasPermission('reports.view_organization')) &&
+            (r.createdById === currentUser.id || r.assignments?.some((a) => a.recipientUserId === currentUser.id) || r.sentToId === currentUser.id || hasPermission('reports.view_organization')) &&
             r.status === 'Signed'
         );
       case 'Rejected':
         return reports.filter(
           (r) =>
-            (r.createdById === currentUser.id || r.sentToId === currentUser.id || hasPermission('reports.view_organization')) &&
+            (r.createdById === currentUser.id || r.assignments?.some((a) => a.recipientUserId === currentUser.id) || r.sentToId === currentUser.id || hasPermission('reports.view_organization')) &&
             r.status === 'Rejected'
         );
       default:
@@ -155,7 +157,9 @@ export const ReportsPage: React.FC = () => {
         ) : (
           filteredReports.map((rep) => {
             const isAuthor = rep.createdById === currentUser.id;
-            const isAssignedRecipient = rep.sentToId === currentUser.id;
+            const isSupabaseReport = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(rep.id);
+            const isSupabaseActionableRecipient = rep.assignments?.some((a) => a.recipientUserId === currentUser.id && (!rep.currentSendCycleId || a.sendCycleId === rep.currentSendCycleId) && a.assignmentStatus === 'pending' && rep.signatureAssignments?.some((m) => m.reportAssignmentId === a.id && m.recipientUserId === currentUser.id && m.sendCycleId === rep.currentSendCycleId));
+            const isAssignedRecipient = isSupabaseReport ? isSupabaseActionableRecipient : (rep.assignments?.some((a) => a.recipientUserId === currentUser.id) || rep.sentToId === currentUser.id);
             const tpl = templates.find((t) => t.id === rep.templateId);
 
             return (
@@ -196,6 +200,11 @@ export const ReportsPage: React.FC = () => {
                   {rep.status === 'Returned' && (
                     <div className="mt-1 text-[11px] text-rose-700 font-medium bg-rose-50 p-2 rounded border border-rose-200 w-fit">
                       Feedback: "{rep.returnReason}"
+                    </div>
+                  )}
+                  {rep.status === 'Rejected' && rep.rejectionReason && (
+                    <div className="mt-1 text-[11px] text-rose-700 font-medium bg-rose-50 p-2 rounded border border-rose-200 w-fit max-w-full line-clamp-2">
+                      Reason: {rep.rejectionReason}
                     </div>
                   )}
 
@@ -260,7 +269,8 @@ export const ReportsPage: React.FC = () => {
                           <RotateCcw className="w-3.5 h-3.5" />
                           <span>Return</span>
                         </button>}
-                        {hasPermission('reports.sign') && <button
+                        {hasPermission('reports.reject') && <button onClick={() => openRejectReportModal(rep)} className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"><XCircle className="w-3.5 h-3.5" /><span>Reject</span></button>}
+                        {hasPermission('reports.sign') && (!isSupabaseReport || rep.signatureAssignments?.some((mapping) => mapping.recipientUserId === currentUser.id && mapping.sendCycleId === rep.currentSendCycleId)) && <button
                           onClick={() => openSignReportModal(rep)}
                           className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
                         >

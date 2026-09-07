@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, Edit3, Plus, ShieldCheck, X, RotateCcw, AlertTriangle, Users, Layers, CheckCircle2, Lock } from 'lucide-react';
-import { apiService } from '../../services/apiService';
-import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS } from '../../shared/permissionCatalog';
+import { Copy, Edit3, Plus, ShieldCheck, X, AlertTriangle, Users, Layers, CheckCircle2, Lock } from 'lucide-react';
+import { adminService } from '../../features/admin/services/adminService';
+import type { AdminPermissionDefinition } from '../../features/admin/types/adminTypes';
 import type { GovernanceLevel, PermissionKey } from '../../shared/permissionCatalog';
 import type { OrganizationalRole } from '../../types';
-import { useApp } from '../../context/AppContext';
 import { AdminInfoTooltip } from './AdminInfoTooltip';
 
 type EditorState = {
@@ -25,21 +24,21 @@ const blankRole = (): EditorState => ({
 });
 
 export const AdminRolesPermissions: React.FC = () => {
-  const { refreshAppData } = useApp();
   const [roles, setRoles] = useState<OrganizationalRole[]>([]);
+  const [permissionDefinitions, setPermissionDefinitions] = useState<AdminPermissionDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
-  const [restoring, setRestoring] = useState(false);
   const [presetFeedback, setPresetFeedback] = useState<string | null>(null);
 
   const load = async () => {
     try {
       setLoading(true);
-      const data = await apiService.getAdminRoles();
-      setRoles(data);
+      const data = await adminService.roleCatalog();
+      setRoles(data.roles);
+      setPermissionDefinitions(data.permissions);
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Unable to load roles.');
@@ -122,15 +121,14 @@ export const AdminRolesPermissions: React.FC = () => {
         permissions: editor.permissions,
       };
       if (editor.id) {
-        await apiService.updateAdminRole(editor.id, payload);
+        await adminService.updateRole(editor.id, payload);
         setSuccessMsg(`Role "${editor.name}" permissions updated successfully.`);
       } else {
-        await apiService.createAdminRole(payload);
+        await adminService.createRole(payload);
         setSuccessMsg(`Custom Role "${editor.name}" created successfully.`);
       }
       setEditor(null);
       await load();
-      await refreshAppData();
     } catch (err: any) {
       setError(err.message || 'Unable to save role.');
     } finally {
@@ -138,35 +136,13 @@ export const AdminRolesPermissions: React.FC = () => {
     }
   };
 
-  const restoreDefaults = async () => {
-    if (!editor || !editor.id || editor.roleType !== 'System' || editor.key === 'admin') return;
-    const confirmRestore = window.confirm(
-      `Restore default ${editor.name} permissions?\n\nAll customized ${editor.name} permission settings will be replaced with the WidgetFlow default ${editor.name} configuration.`
-    );
-    if (!confirmRestore) return;
-
-    try {
-      setRestoring(true);
-      setError(null);
-      await apiService.restoreDefaultAdminRole(editor.id);
-      setSuccessMsg(`Default permissions restored for ${editor.name}.`);
-      setEditor(null);
-      await load();
-      await refreshAppData();
-    } catch (err: any) {
-      setError(err.message || 'Unable to restore default permissions.');
-    } finally {
-      setRestoring(false);
-    }
-  };
-
   const duplicate = async (role: OrganizationalRole) => {
     const name = window.prompt('Name for the duplicated role:', `${role.name} Copy`);
     if (!name?.trim()) return;
     try {
-      await apiService.duplicateAdminRole(role.id, name.trim());
+      await adminService.createRole({ name: name.trim(), description: role.description,
+        governanceLevel: role.governanceLevel, isActive: true, permissions: role.permissions });
       await load();
-      await refreshAppData();
     } catch (err: any) {
       setError(err.message || 'Unable to duplicate role.');
     }
@@ -174,9 +150,9 @@ export const AdminRolesPermissions: React.FC = () => {
 
   const deactivate = async (role: OrganizationalRole) => {
     try {
-      await apiService.updateAdminRole(role.id, { isActive: false });
+      await adminService.updateRole(role.id, { name: role.name, description: role.description,
+        governanceLevel: role.governanceLevel, isActive: false, permissions: role.permissions });
       await load();
-      await refreshAppData();
     } catch (err: any) {
       setError(err.message || 'Unable to deactivate role.');
     }
@@ -184,9 +160,9 @@ export const AdminRolesPermissions: React.FC = () => {
 
   const activate = async (role: OrganizationalRole) => {
     try {
-      await apiService.updateAdminRole(role.id, { isActive: true });
+      await adminService.updateRole(role.id, { name: role.name, description: role.description,
+        governanceLevel: role.governanceLevel, isActive: true, permissions: role.permissions });
       await load();
-      await refreshAppData();
     } catch (err: any) {
       setError(err.message || 'Unable to activate role.');
     }
@@ -197,6 +173,13 @@ export const AdminRolesPermissions: React.FC = () => {
   const customRolesCount = roles.filter((r) => r.roleType === 'Custom').length;
   const activeRolesCount = roles.filter((r) => r.isActive).length;
   const totalAssignedUsers = roles.reduce((sum, r) => sum + r.assignedUsers, 0);
+  const permissionGroups = Object.values(permissionDefinitions.reduce<Record<string, { id: string; label: string; permissions: [string, string][] }>>((groups, permission) => {
+    const group = groups[permission.groupKey] ?? { id: permission.groupKey, label: permission.groupKey.replace(/[-_]/g, ' '), permissions: [] };
+    group.permissions.push([permission.key, permission.label]);
+    groups[permission.groupKey] = group;
+    return groups;
+  }, {}));
+  const permissionCount = permissionDefinitions.length;
 
   return (
     <div className="space-y-6 animate-fade-in p-6">
@@ -249,7 +232,7 @@ export const AdminRolesPermissions: React.FC = () => {
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Catalog Perms</div>
           <div className="text-lg font-black text-slate-900 mt-1 flex items-center justify-between">
-            {ALL_PERMISSION_KEYS.length}
+            {permissionCount}
             <ShieldCheck className="w-4 h-4 text-blue-500" />
           </div>
         </div>
@@ -302,7 +285,7 @@ export const AdminRolesPermissions: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-4 font-bold text-slate-700">{role.assignedUsers}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-700">
-                        {isProtectedAdmin ? <span className="text-slate-400 font-normal">Full Platform</span> : `${role.permissions.length} Enabled`}
+                        {isProtectedAdmin ? <span className="text-slate-400 font-normal">Protected authority · 0 ordinary</span> : `${role.permissions.length} Enabled`}
                       </td>
                       <td className="py-3.5 px-4">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${role.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
@@ -459,10 +442,10 @@ export const AdminRolesPermissions: React.FC = () => {
             {/* Permission Summary Counter */}
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="font-extrabold text-slate-900">
-                Permission Summary: <span className="text-purple-700">{editor.permissions.length}</span> / {ALL_PERMISSION_KEYS.length} Enabled
+                Permission Summary: <span className="text-purple-700">{editor.permissions.length}</span> / {permissionCount} Enabled
               </div>
               <div className="flex flex-wrap gap-2 text-[10px] font-bold">
-                {PERMISSION_GROUPS.map((group) => {
+                {permissionGroups.map((group) => {
                   const count = group.permissions.filter(([k]) => editor.permissions.includes(k as PermissionKey)).length;
                   return (
                     <span key={group.id} className="px-2 py-0.5 bg-white border border-slate-200 rounded-md text-slate-600">
@@ -475,7 +458,7 @@ export const AdminRolesPermissions: React.FC = () => {
 
             {/* Permissions Grid */}
             <div className="grid md:grid-cols-2 gap-4">
-              {PERMISSION_GROUPS.map((group) => (
+              {permissionGroups.map((group) => (
                 <section key={group.id} className="border border-slate-200 rounded-2xl p-4 bg-white">
                   <h4 className="text-xs font-extrabold uppercase tracking-wide text-slate-900 mb-3 border-b border-slate-100 pb-2">
                     {group.label}
@@ -502,27 +485,7 @@ export const AdminRolesPermissions: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-              <div>
-                {editor.roleType === 'System' && editor.key !== 'admin' && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      disabled={restoring}
-                      onClick={() => void restoreDefaults()}
-                      className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>{restoring ? 'Restoring...' : 'Restore Default Permissions'}</span>
-                    </button>
-                    <AdminInfoTooltip
-                      title="Restore Default Permissions"
-                      description="Replaces this system role’s customized permissions with the original WidgetFlow default permission set."
-                      whoItAffects="Users assigned to this system role."
-                      warning="This does not rewrite historical actions performed by users in this role."
-                    />
-                  </div>
-                )}
-              </div>
+              <div />
               <div className="flex items-center gap-3">
                 <button
                   type="button"

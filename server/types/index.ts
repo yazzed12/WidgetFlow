@@ -22,4 +22,6 @@ export interface ServerUser {
 
 export interface AuthenticatedRequest extends Request {
   user?: ServerUser;
+  authSessionId?: string;
+  authSessionToken?: string;
 }

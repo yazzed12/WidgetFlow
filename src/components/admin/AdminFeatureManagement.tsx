@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSystemConfig } from '../../context/SystemConfigContext';
-import { apiService } from '../../services/apiService';
+import { configurationService } from '../../features/configuration/services/configurationService';
 import { AdminInfoTooltip } from './AdminInfoTooltip';
 import {
   LayoutTemplate,
@@ -37,7 +37,7 @@ export const AdminFeatureManagement: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getAdminFeatures();
+      const data = await configurationService.features();
       setFeatures(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Failed to fetch admin features:', err);
@@ -102,6 +102,10 @@ export const AdminFeatureManagement: React.FC = () => {
         </div>
       ) : loading ? (
         <div className="p-12 text-center text-xs text-slate-400">Loading platform features...</div>
+      ) : features.length === 0 ? (
+        <div className="p-12 text-center text-xs text-slate-400 bg-white border border-slate-200 rounded-2xl">
+          No feature settings are configured.
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {features.map((feat) => {

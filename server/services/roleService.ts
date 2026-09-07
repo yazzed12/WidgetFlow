@@ -1,6 +1,7 @@
 import { db } from '../db/database.js';
 import { authorizationService } from './authorizationService.js';
-import { adminService } from './adminService.js';
+import { adminAuditService } from './adminAuditService.js';
+import { governancePolicyService } from './governancePolicyService.js';
 import { PERMISSION_KEY_SET, getDefaultSystemRolePermissions } from '../../src/shared/permissionCatalog.js';
 import type { GovernanceLevel, PermissionKey } from '../../src/shared/permissionCatalog.js';
 import type { ServerUser } from '../types/index.js';
@@ -36,17 +37,15 @@ function serializePermissions(permissions: string[]): string {
 }
 
 function validateRolePermissionsDependency(previousRole: any, permissions: PermissionKey[]) {
-  const settings = adminService.getEffectiveConfig().settings;
-  const isGovernanceEnabled = settings['template_governance'] !== false && settings['workflow.template_governance'] !== false;
-  if (!isGovernanceEnabled) return;
+  if (!governancePolicyService.isTemplateGovernanceEnabled()) return;
 
   const hasApprovalCapability = permissions.includes('template_approvals.approve') && permissions.includes('template_approvals.view');
   if (hasApprovalCapability) return;
 
-  const routingConfig = adminService.getGovernanceRouting().routes;
-  const isEmployeeTarget = previousRole.id === routingConfig.employee.id || previousRole.key === routingConfig.employee.key;
-  const isManagerTarget = previousRole.id === routingConfig.manager.id || previousRole.key === routingConfig.manager.key;
-  const isDirectorTarget = previousRole.id === routingConfig.director.id || previousRole.key === routingConfig.director.key;
+  const routingTargets = governancePolicyService.targetRoleIds();
+  const isEmployeeTarget = previousRole.id === routingTargets.employee || previousRole.key === routingTargets.employee;
+  const isManagerTarget = previousRole.id === routingTargets.manager || previousRole.key === routingTargets.manager;
+  const isDirectorTarget = previousRole.id === routingTargets.director || previousRole.key === routingTargets.director;
 
   if (isEmployeeTarget) {
     const empSubmitting = db.prepare(`
@@ -133,7 +132,7 @@ export const roleService = {
       const insertPermission = db.prepare(`INSERT INTO role_permissions (id, role_id, permission_key) VALUES (?, ?, ?)`);
       permissions.forEach((permission, index) => insertPermission.run(`rp-${roleId}-${index}`, roleId, permission));
     })();
-    adminService.logAudit({ actorId: admin.id, actorName: admin.name, actorRole: admin.role, action: 'ROLE_CREATED', target: name, previousValue: '', newValue: `${input.governanceLevel} | ${serializePermissions(permissions)}` });
+    adminAuditService.record({ actorId: admin.id, actorName: admin.name, actorRole: admin.role, action: 'ROLE_CREATED', target: name, previousValue: '', newValue: `${input.governanceLevel} | ${serializePermissions(permissions)}` });
     return this.getRoleById(roleId);
   },
 
@@ -160,10 +159,10 @@ export const roleService = {
       const duplicate = db.prepare(`SELECT id FROM roles WHERE id != ? AND (name = ? COLLATE NOCASE OR key = ? COLLATE NOCASE)`).get(roleId, name, key);
       if (duplicate) throw new Error('A role with this name or key already exists.');
       if (!merged.isActive && previous.isActive) {
-        const routingConfig = adminService.getGovernanceRouting().routes;
-        const isTarget = previous.id === routingConfig.employee.id || previous.key === routingConfig.employee.key ||
-                         previous.id === routingConfig.manager.id || previous.key === routingConfig.manager.key ||
-                         previous.id === routingConfig.director.id || previous.key === routingConfig.director.key;
+        const routingTargets = governancePolicyService.targetRoleIds();
+        const isTarget = previous.id === routingTargets.employee || previous.key === routingTargets.employee ||
+                         previous.id === routingTargets.manager || previous.key === routingTargets.manager ||
+                         previous.id === routingTargets.director || previous.key === routingTargets.director;
         if (isTarget) {
           throw new Error('This role is currently used as a Template Governance approval target. Update Template Governance routing before deactivating it.');
         }
@@ -192,7 +191,7 @@ export const roleService = {
 
     if (permissionsChanged) {
       const auditAction = isSystemRole ? 'SYSTEM_ROLE_PERMISSIONS_CHANGED' : 'ROLE_PERMISSIONS_CHANGED';
-      adminService.logAudit({
+      adminAuditService.record({
         actorId: admin.id,
         actorName: admin.name,
         actorRole: admin.role,
@@ -205,7 +204,7 @@ export const roleService = {
 
     if (!isSystemRole) {
       const statusChanged = previous.isActive !== merged.isActive;
-      adminService.logAudit({
+      adminAuditService.record({
         actorId: admin.id,
         actorName: admin.name,
         actorRole: admin.role,
@@ -235,7 +234,7 @@ export const roleService = {
       db.prepare(`UPDATE roles SET updated_at = datetime('now') WHERE id = ?`).run(roleId);
     })();
 
-    adminService.logAudit({
+    adminAuditService.record({
       actorId: admin.id,
       actorName: admin.name,
       actorRole: admin.role,

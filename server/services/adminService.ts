@@ -447,7 +447,7 @@ class AdminService {
           name: 'Direct Publish',
           isDirectPublish: true,
           strategy: 'DIRECT_PUBLISH',
-          specificUserId: 'DIRECT_PUBLISH',
+          specificUserId: null,
           specificUserName: 'N/A',
           isEligible: true,
           isRouteValid: true,
@@ -624,9 +624,9 @@ class AdminService {
       specificUserId?: string
     ) => {
       const strat = strategy || 'SPECIFIC_USER';
-      const roleId = targetRoleId ?? (strat === 'DIRECT_PUBLISH' ? 'DIRECT_PUBLISH' : 'DIRECT_PUBLISH');
+      const roleId = targetRoleId || '';
       if (strat === 'DIRECT_PUBLISH' || roleId === 'DIRECT_PUBLISH') {
-        return { targetRoleId: 'DIRECT_PUBLISH', strategy: 'DIRECT_PUBLISH', specificUserId: 'DIRECT_PUBLISH' };
+        return { targetRoleId: null, strategy: 'DIRECT_PUBLISH' as const, specificUserId: null };
       }
 
       const roleLower = (roleId || '').trim().toLowerCase();
@@ -713,20 +713,20 @@ class AdminService {
       routes.directorSpecificUserId
     );
 
-    this.updateSettings(
-      {
-        'governance.routing.employee': empRes.targetRoleId,
-        'governance.strategy.employee': empRes.strategy,
-        'governance.user.employee': empRes.specificUserId,
-        'governance.routing.manager': mgrRes.targetRoleId,
-        'governance.strategy.manager': mgrRes.strategy,
-        'governance.user.manager': mgrRes.specificUserId,
-        'governance.routing.director': dirRes.targetRoleId,
-        'governance.strategy.director': dirRes.strategy,
-        'governance.user.director': dirRes.specificUserId,
-      },
-      admin
-    );
+    const resolvedRoutes = { employee: empRes, manager: mgrRes, director: dirRes };
+    const settingsToPersist: Record<string, string> = {};
+    Object.entries(resolvedRoutes).forEach(([level, route]) => {
+      settingsToPersist[`governance.strategy.${level}`] = route.strategy;
+      if (route.strategy === 'DIRECT_PUBLISH') {
+        db.prepare(`DELETE FROM system_general_settings WHERE setting_key IN (?, ?)`)
+          .run(`governance.routing.${level}`, `governance.user.${level}`);
+      } else {
+        settingsToPersist[`governance.routing.${level}`] = route.targetRoleId!;
+        if (route.specificUserId) settingsToPersist[`governance.user.${level}`] = route.specificUserId;
+        else db.prepare(`DELETE FROM system_general_settings WHERE setting_key = ?`).run(`governance.user.${level}`);
+      }
+    });
+    this.updateSettings(settingsToPersist, admin);
 
     this.logAudit({
       actorId: admin.id,

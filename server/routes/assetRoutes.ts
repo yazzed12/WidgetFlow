@@ -4,8 +4,32 @@ import { AppError } from '../middleware/errorHandler.js';
 import fs from 'fs';
 import path from 'path';
 import { authorizationService } from '../services/authorizationService.js';
+import { resourceAccessService } from '../services/resourceAccessService.js';
+import { createClient } from '@supabase/supabase-js';
 
 export const assetRouter = Router();
+
+async function canonicalReportIdsForAsset(assetId: string, authorization?: string): Promise<string[]> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!authorization || !/^Bearer\s+.+$/i.test(authorization) || !url || !key) return [];
+  const client = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { headers: { Authorization: authorization } },
+  });
+  const { data, error } = await client
+    .from('report_values')
+    .select('report_id')
+    .filter('value->>attachmentId', 'eq', assetId);
+  if (error || !data?.length) return [];
+  const ids = [...new Set(data.map((row) => row.report_id))];
+  const { data: accessibleReports, error: accessError } = await client
+    .from('reports')
+    .select('id')
+    .in('id', ids);
+  if (accessError) return [];
+  return (accessibleReports || []).map((row) => row.id);
+}
 
 const UPLOADS_DIR = path.join(process.cwd(), 'server', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -84,11 +108,10 @@ assetRouter.post('/signature-upload', (req, res, next) => {
 
     fs.writeFileSync(filePath, buffer);
 
-    const currentUser = (req as any).currentUser || (req as any).user;
     db.prepare(`
       INSERT INTO template_assets (id, filename, mime_type, size_bytes, storage_path, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(assetId, filename || diskFilename, verifyRes.format, buffer.length, filePath, currentUser?.id || 'system');
+    `).run(assetId, filename || diskFilename, verifyRes.format, buffer.length, filePath, (req as any).user!.id);
 
     res.json({
       success: true,
@@ -104,10 +127,19 @@ assetRouter.post('/signature-upload', (req, res, next) => {
   }
 });
 
-// Upload Asset API Endpoint
-assetRouter.post('/upload', (req, res, next) => {
+function handleGeneralAssetUpload(requiredPermissions: Parameters<typeof authorizationService.requireAnyPermission>[1]) {
+  return (req: any, res: any, next: any) => {
   try {
-    authorizationService.requirePermission((req as any).user, 'studio.access');
+    if (process.env.NODE_ENV !== 'production') console.info('[AUTH TRACE SERVER]', {
+      assetPermissionCheck: true,
+      reqUserIdPresent: Boolean(req.user?.id),
+      reqUserRoleKey: req.user?.roleKey,
+      reqUserPermissionCount: Array.isArray(req.user?.permissions) ? req.user.permissions.length : 0,
+      reqUserHasReportsCreate: Array.isArray(req.user?.permissions) && req.user.permissions.includes('reports.create'),
+      reqUserHasReportsEditDraft: Array.isArray(req.user?.permissions) && req.user.permissions.includes('reports.edit_draft'),
+      requiredPermissions,
+    });
+    authorizationService.requireAnyPermission(req.user, requiredPermissions);
     const { filename, mimeType, base64Data } = req.body;
 
     if (!base64Data) {
@@ -119,6 +151,7 @@ assetRouter.post('/upload', (req, res, next) => {
       'image/jpeg',
       'image/jpg',
       'image/webp',
+      'application/msword',
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -137,7 +170,8 @@ assetRouter.post('/upload', (req, res, next) => {
     const assetId = `asset-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     let ext = 'bin';
     if (targetMime.includes('pdf')) ext = 'pdf';
-    else if (targetMime.includes('word')) ext = 'docx';
+    else if (targetMime === 'application/msword') ext = 'doc';
+    else if (targetMime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') ext = 'docx';
     else if (targetMime.includes('sheet')) ext = 'xlsx';
     else if (targetMime.includes('png')) ext = 'png';
     else if (targetMime.includes('jpeg') || targetMime.includes('jpg')) ext = 'jpg';
@@ -161,7 +195,7 @@ assetRouter.post('/upload', (req, res, next) => {
     db.prepare(`
       INSERT INTO template_assets (id, filename, mime_type, size_bytes, storage_path, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(assetId, filename || diskFilename, targetMime, buffer.length, filePath, (req as any).currentUser?.id || 'system');
+    `).run(assetId, filename || diskFilename, targetMime, buffer.length, filePath, (req as any).user!.id);
 
     res.json({
       success: true,
@@ -175,10 +209,17 @@ assetRouter.post('/upload', (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+  };
+}
+
+// Report attachment upload: report permissions remain unchanged.
+assetRouter.post('/upload', handleGeneralAssetUpload(['reports.create', 'reports.edit_draft']));
+
+// Template image/logo upload: use template workflow permissions.
+assetRouter.post('/template-upload', handleGeneralAssetUpload(['templates.create', 'templates.edit_draft']));
 
 // Stream Stored Asset API Endpoint
-assetRouter.get('/:id', (req, res, next) => {
+assetRouter.get('/:id', async (req, res, next) => {
   try {
     const assetId = req.params.id;
     const asset = db.prepare(`SELECT * FROM template_assets WHERE id = ?`).get(assetId) as any;
@@ -190,7 +231,7 @@ assetRouter.get('/:id', (req, res, next) => {
     // Access control for private signature assets
     const isSignatureAsset = asset.id.startsWith('sigasset-') || asset.filename.includes('sigasset');
     if (isSignatureAsset) {
-      const callerId = (req as any).user?.id || (req as any).currentUser?.id || (req.headers['x-demo-user-id'] as string);
+      const callerId = (req as any).user?.id;
       if (!callerId) {
         throw new AppError('Authentication required to view private signature assets.', 401, 'UNAUTHORIZED');
       }
@@ -209,6 +250,19 @@ assetRouter.get('/:id', (req, res, next) => {
           throw new AppError('Forbidden: Access to private user signature asset denied.', 403, 'FORBIDDEN');
         }
       }
+    } else {
+      const caller = (req as any).user;
+      if (!caller) throw new AppError('Authentication required to view report attachments.', 401, 'UNAUTHORIZED');
+      const linkedReports = db.prepare(`
+        SELECT DISTINCT r.id, r.created_by as createdById, r.sent_to_user_id as sentToId
+        FROM reports r
+        JOIN report_field_values rfv ON rfv.report_id = r.id
+        WHERE rfv.value_text LIKE ?
+      `).all(`%${assetId}%`) as any[];
+      const canonicalReportIds = await canonicalReportIdsForAsset(assetId, req.headers.authorization);
+      const isAssetCreator = asset.created_by === caller.id;
+      const canView = isAssetCreator || linkedReports.some((report) => resourceAccessService.canAccessReport(caller, report)) || canonicalReportIds.length > 0;
+      if (!canView) throw new AppError('Forbidden: Access to report attachment denied.', 403, 'FORBIDDEN');
     }
 
     const resolvedPath = path.resolve(asset.storage_path);

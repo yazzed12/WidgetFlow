@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { apiService } from '../../services/apiService';
+import { configurationService } from '../../features/configuration/services/configurationService';
 import type { ContentLibraryItem } from '../../types';
 import { AdminInfoTooltip } from './AdminInfoTooltip';
 import {
@@ -52,7 +52,7 @@ export const AdminContentLibraryManagement: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getAdminContentLibrary();
+      const data = await configurationService.contentLibrary();
       setItems(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Failed to fetch admin content library:', err);
@@ -108,10 +108,10 @@ export const AdminContentLibraryManagement: React.FC = () => {
       };
 
       if (editingId) {
-        await apiService.updateAdminContentItem(editingId, payload);
+        await configurationService.updateContentItem(editingId, payload);
         setToastMessage(`Content "${name}" updated successfully.`);
       } else {
-        await apiService.createAdminContentItem(payload);
+        await configurationService.createContentItem(payload);
         setToastMessage(`Content "${name}" added to organization library.`);
       }
 
@@ -128,7 +128,7 @@ export const AdminContentLibraryManagement: React.FC = () => {
   const handleToggleStatus = async (item: ContentLibraryItem) => {
     try {
       const nextEnabled = !item.enabled;
-      await apiService.updateAdminContentItemStatus(item.id, nextEnabled);
+      await configurationService.setContentItemEnabled(item.id, nextEnabled);
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, enabled: nextEnabled } : i)));
       setToastMessage(`Content "${item.name}" is now ${nextEnabled ? 'Enabled' : 'Disabled'}.`);
       setTimeout(() => setToastMessage(null), 3000);

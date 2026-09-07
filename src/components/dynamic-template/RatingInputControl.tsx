@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { TemplateComponent } from '../../types/index.js';
 import { Star } from 'lucide-react';
+import { getReportBusinessFieldKey } from '../../shared/signatureResolver';
 
 interface RatingInputControlProps {
   component: TemplateComponent;
@@ -17,7 +18,7 @@ export const RatingInputControl: React.FC<RatingInputControlProps> = ({
   onChange,
   disabled,
 }) => {
-  const fieldKey = component.key || component.id;
+  const fieldKey = getReportBusinessFieldKey(component) || '';
   const ratingConfig = component.ratingConfig || {};
   const min = ratingConfig.min !== undefined ? ratingConfig.min : 1;
   const max = ratingConfig.max !== undefined ? ratingConfig.max : 5;

@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { useSystemConfig } from '../../context/SystemConfigContext';
 import { ReportCommentThread } from './ReportCommentThread';
 import { DynamicTemplateRenderer } from '../dynamic-template/DynamicTemplateRenderer';
+import { normalizeReportTemplateSnapshot } from '../../shared/signatureResolver';
 import {
   X,
   FileText,
@@ -39,10 +40,21 @@ export const ReportViewModal: React.FC<ReportViewModalProps> = ({ report, onClos
   } = useApp();
   const { isSettingEnabled } = useSystemConfig();
 
-  const template = (report as any).templateSnapshot || templates.find((t) => t.id === report.templateId);
+  const template = (report as any).templateSnapshot
+    ? normalizeReportTemplateSnapshot((report as any).templateSnapshot)
+    : templates.find((t) => t.id === report.templateId);
 
   const isAuthor = report.createdById === currentUser.id;
-  const isAssignedRecipient = report.sentToId === currentUser.id;
+  const isSupabaseReport = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(report.id);
+  const isAssignedRecipient = isSupabaseReport
+    ? report.status === 'Sent' && !report.lockedAt && !!report.currentSendCycleId && !!report.assignments?.some((assignment) => assignment.recipientUserId === currentUser.id && assignment.sendCycleId === report.currentSendCycleId && assignment.assignmentStatus === 'pending' && report.signatureAssignments?.some((mapping) => mapping.reportAssignmentId === assignment.id && mapping.recipientUserId === currentUser.id && mapping.sendCycleId === report.currentSendCycleId))
+    : report.sentToId === currentUser.id;
+  const isMappedSigner = !!report.assignments?.some((assignment) =>
+    assignment.recipientUserId === currentUser.id
+    && assignment.sendCycleId === report.currentSendCycleId
+    && assignment.assignmentStatus === 'pending'
+    && report.signatureAssignments?.some((mapping) => mapping.reportAssignmentId === assignment.id && mapping.recipientUserId === currentUser.id && mapping.sendCycleId === report.currentSendCycleId)
+  );
 
   const components: any[] = [];
   if (template?.components) components.push(...template.components);
@@ -129,7 +141,7 @@ export const ReportViewModal: React.FC<ReportViewModalProps> = ({ report, onClos
   };
 
   const timelineItems = getTimelineItems();
-
+  const visibleAssignments = report.assignments?.filter((assignment) => !report.currentSendCycleId || assignment.sendCycleId === report.currentSendCycleId) || [];
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'Signed':
@@ -341,6 +353,27 @@ export const ReportViewModal: React.FC<ReportViewModalProps> = ({ report, onClos
             </div>
           )}
 
+          {visibleAssignments.length > 0 && (
+            <div className="border border-slate-200 rounded-2xl p-5 bg-white space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">Signature Status</h3>
+                <span className="text-xs font-bold text-slate-700">{visibleAssignments.filter((a) => a.assignmentStatus === 'signed').length} / {visibleAssignments.length} signed</span>
+              </div>
+              <div className="space-y-2">
+                {visibleAssignments.map((assignment) => {
+                  const signature = (report.signatureHistory || []).find((s: any) => s.reportAssignmentId === assignment.id || s.assignmentId === assignment.id);
+                  const signed = assignment.assignmentStatus === 'signed';
+                  return (
+                    <div key={assignment.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                      <div className="min-w-0"><div className="font-bold text-slate-900 truncate">{assignment.recipientName || 'Recipient'}</div><div className="text-[10px] text-slate-500">{assignment.recipientRoleName || assignment.recipientRoleKey || 'Role'}</div></div>
+                      <div className="text-right shrink-0"><div className={`font-bold ${signed ? 'text-emerald-700' : 'text-amber-700'}`}>{signed ? '✓ Digitally Signed' : (assignment.assignmentStatus || 'Pending')}</div>{signed && signature && <div className="text-[10px] text-slate-500">{signature.verificationId || 'Verified'}{signature.signedAt ? ` · ${new Date(signature.signedAt).toLocaleString()}` : ''}</div>}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Dynamic Template Structure / Values */}
           <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 space-y-4">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-200 pb-2">
@@ -355,6 +388,7 @@ export const ReportViewModal: React.FC<ReportViewModalProps> = ({ report, onClos
                 activeSignatures={report.activeSignatures}
                 signatureHistory={report.signatureHistory}
                 currentUser={currentUser}
+                reportId={report.id}
               />
             ) : (
               <div className="space-y-3">
@@ -493,7 +527,7 @@ export const ReportViewModal: React.FC<ReportViewModalProps> = ({ report, onClos
                   </button>
                 )}
 
-                {hasSenderSigRequirement && !activeSenderSig ? (
+                {isMappedSigner && (hasSenderSigRequirement && !activeSenderSig ? (
                   <div className="px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1.5 text-amber-900 text-[11px] font-semibold">
                     <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                     <span>Sender signature required before sign-off</span>
@@ -511,7 +545,7 @@ export const ReportViewModal: React.FC<ReportViewModalProps> = ({ report, onClos
                       <span>Sign & Accept Report</span>
                     </button>
                   )
-                )}
+                ))}
               </>
             )}
           </div>

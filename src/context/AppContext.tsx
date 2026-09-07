@@ -12,11 +12,11 @@ import type {
   WidgetLayoutType,
   RequestComment,
 } from '../types';
-import { DEMO_USERS, MOCK_CATEGORIES } from '../data/initialData';
-import { getInitialState, saveStateToStorage, clearDemoStorage } from '../utils/storage';
-import { apiService, setApiDemoUserId } from '../services/apiService';
+import { apiService } from '../services/apiService';
 import type { PermissionKey } from '../shared/permissionCatalog';
 import { hasPermissionKeys } from '../shared/permissionCatalog';
+import { templateService } from '../features/templates/services/templateService';
+import { reportService } from '../features/reports/reportService';
 
 interface ToastState {
   id: number;
@@ -39,12 +39,13 @@ interface AppContextType {
   searchTerm: string;
   sidebarOpen: boolean;
   toast: ToastState | null;
+  templatesLoading: boolean;
+  templatesError: string | null;
 
   // Modal & Drawer states
   isAddModalOpen: boolean;
   isChatDrawerOpen: boolean;
   isProfileModalOpen: boolean;
-  isResetDemoModalOpen: boolean;
   draftToEdit: WidgetTemplate | null;
   selectedTemplateForDetail: WidgetTemplate | null;
   selectedRequestForDrawer: WidgetTemplate | null;
@@ -58,7 +59,6 @@ interface AppContextType {
   reportToEdit: ReportInstance | null;
 
   // Navigation & UI Actions
-  switchUser: (userId: string) => void;
   setActiveView: (view: ViewType) => void;
   setSelectedCategory: (catId: string | null) => void;
   setSearchTerm: (term: string) => void;
@@ -66,7 +66,6 @@ interface AppContextType {
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   showToast: (message: string, type?: 'success' | 'info' | 'warning') => void;
-  resetDemoData: () => void;
 
   // Modal & Drawer Triggers
   openAddTemplateModal: (draft?: WidgetTemplate | null) => void;
@@ -93,8 +92,6 @@ interface AppContextType {
 
   openProfileModal: () => void;
   closeProfileModal: () => void;
-  openResetDemoModal: () => void;
-  closeResetDemoModal: () => void;
 
   toggleChatDrawer: (open?: boolean) => void;
 
@@ -129,10 +126,10 @@ interface AppContextType {
     data: Record<string, string | number>,
     title?: string,
     markAsCompleted?: boolean
-  ) => Promise<void>;
+  ) => Promise<ReportInstance | undefined>;
 
   markReportCompleted: (reportId: string) => void;
-  sendReport: (reportId: string, recipientId: string, senderNote?: string, signaturePayload?: any) => Promise<void>;
+  sendReport: (reportId: string, recipientId: string | string[], senderNote?: string, signaturePayload?: any) => Promise<void>;
   returnReport: (reportId: string, feedback: string) => void;
   rejectReport: (reportId: string, reason: string) => Promise<void>;
   signReport: (reportId: string, payload?: any) => Promise<void>;
@@ -140,13 +137,13 @@ interface AppContextType {
 
   claimTemplateReview: (templateId: string) => Promise<WidgetTemplate | undefined>;
   refreshTemplates: () => Promise<void>;
+  clearTemplatesError: () => void;
   refreshReports: () => Promise<void>;
-  refreshAppData: () => Promise<void>;
-
-  apiError: string | null;
   hasPermission: (permission: PermissionKey) => boolean;
   // Derived helpers
   getCategoryTemplateCount: (catId: string) => number;
+  getTotalCategoryCount: () => number;
+  getApprovedTemplateCategoryCount: () => number;
   getApprovedTemplates: () => WidgetTemplate[];
   getPendingApprovalsForUser: () => WidgetTemplate[];
   getMyRequestsForUser: () => WidgetTemplate[];
@@ -155,17 +152,33 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User>(DEMO_USERS[0]);
-  const [users, setUsers] = useState<User[]>(DEMO_USERS);
-  const [categories, setCategories] = useState<Category[]>(MOCK_CATEGORIES);
+const isSupabasePrincipal = (user: User) =>
+  /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(user.id);
+
+export const AppProvider: React.FC<{
+  children: ReactNode;
+  authenticatedPrincipal: User;
+}> = ({ children, authenticatedPrincipal }) => {
+  const currentUser = authenticatedPrincipal;
+  const [users] = useState<User[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [templates, setTemplates] = useState<WidgetTemplate[]>([]);
-  const [approvalRecords, setApprovalRecords] = useState<ApprovalRecord[]>([]);
-  const [requestComments, setRequestComments] = useState<RequestComment[]>([]);
-  const [reportComments, setReportComments] = useState<ReportComment[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [approvalRecords] = useState<ApprovalRecord[]>([]);
+  const [requestComments] = useState<RequestComment[]>([]);
+  const [reportComments] = useState<ReportComment[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [reports, setReports] = useState<ReportInstance[]>([]);
+
+  const refreshCategories = async () => {
+    try {
+      const data = await templateService.getCategories();
+      setCategories(data);
+    }
+    catch (error: any) { console.warn('Failed to load Supabase categories:', error?.message ?? error); }
+  };
+  useEffect(() => { void refreshTemplates(); void refreshCategories(); }, []);
 
   const [activeView, setActiveView] = useState<ViewType>('dashboard');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -177,7 +190,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [isResetDemoModalOpen, setIsResetDemoModalOpen] = useState(false);
   const [draftToEdit, setDraftToEdit] = useState<WidgetTemplate | null>(null);
   const [selectedTemplateForDetail, setSelectedTemplateForDetail] = useState<WidgetTemplate | null>(null);
   const [selectedRequestForDrawer, setSelectedRequestForDrawer] = useState<WidgetTemplate | null>(null);
@@ -190,75 +202,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedReportForSign, setSelectedReportForSign] = useState<ReportInstance | null>(null);
   const [reportToEdit, setReportToEdit] = useState<ReportInstance | null>(null);
 
-  const [apiError, setApiError] = useState<string | null>(null);
-
-  // Helper to sync from REST API (SQLite backend source of truth)
-  const syncFromApi = async (userId: string) => {
-    setApiDemoUserId(userId);
-    try {
-      const resolvedUser = await apiService.getMyAuthorization();
-      setCurrentUser(resolvedUser);
-      const [apiUsers, apiCategories] = await Promise.all([apiService.getUsers(), apiService.getCategories()]);
-      setUsers(apiUsers);
-      setCategories(apiCategories);
-      const can = (permission: PermissionKey) => hasPermissionKeys(resolvedUser.permissions, permission);
-      const [templateResult, reportResult, notificationResult] = await Promise.allSettled([
-        can('templates.view_approved') || can('templates.create') ? apiService.getTemplates() : Promise.resolve([]),
-        can('reports.view_own') || can('reports.view_received') || can('reports.view_organization') ? apiService.getReports() : Promise.resolve([]),
-        can('notifications.view') ? apiService.getNotifications() : Promise.resolve([]),
-      ]);
-      setTemplates(templateResult.status === 'fulfilled' ? templateResult.value : []);
-      setReports(reportResult.status === 'fulfilled' ? reportResult.value : []);
-      setNotifications(notificationResult.status === 'fulfilled' ? notificationResult.value : []);
-      setApiError(null);
-    } catch (err: any) {
-      console.error('Backend API sync error:', err);
-      setApiError(err.message || 'Unable to connect to WidgetFlow API. Please verify server status.');
-    }
-  };
-
-  // Initialize from LocalStorage or mock data, then sync with API
-  useEffect(() => {
-    const savedState = getInitialState();
-    setTemplates(savedState.templates);
-    setApprovalRecords(savedState.approvalRecords);
-    setRequestComments(savedState.requestComments);
-    setReportComments(savedState.reportComments || []);
-    setNotifications(savedState.notifications);
-    setReports(savedState.reports);
-
-    const foundUser = DEMO_USERS.find((u) => u.id === savedState.currentUserId) || DEMO_USERS[0];
-    setCurrentUser(foundUser);
-    setInitialDataLoaded(true);
-
-    syncFromApi(foundUser.id);
-  }, []);
-
-  // Save changes to LocalStorage when core state changes
-  useEffect(() => {
-    if (!initialDataLoaded) return;
-    saveStateToStorage({
-      currentUserId: currentUser.id,
-      templates,
-      approvalRecords,
-      requestComments,
-      reportComments,
-      notifications,
-      reports,
-    });
-  }, [currentUser.id, templates, approvalRecords, requestComments, reportComments, notifications, reports, initialDataLoaded]);
-
-  const switchUser = (userId: string) => {
-    const targetUser = users.find((u) => u.id === userId);
-    if (targetUser) {
-      setCurrentUser(targetUser);
-      setApiDemoUserId(targetUser.id);
-      syncFromApi(targetUser.id);
-      showToast(`Viewing as ${targetUser.name} · ${targetUser.role}`, 'info');
-    }
-  };
-
   const markNotificationRead = async (id: string) => {
+    if (isSupabasePrincipal(currentUser)) {
+      // Migration 042 grants SELECT only. Keep the interaction local until a
+      // Supabase read-state RPC/policy is introduced; never call legacy API.
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      return;
+    }
     try {
       const updatedNotifs = await apiService.markNotificationRead(id);
       setNotifications(updatedNotifs);
@@ -270,6 +220,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const markAllNotificationsRead = async () => {
+    if (isSupabasePrincipal(currentUser)) {
+      setNotifications((prev) => prev.map((n) => (n.userId === currentUser.id ? { ...n, read: true } : n)));
+      showToast('Notifications marked as read locally; sync is not yet available.', 'info');
+      return;
+    }
     try {
       const updatedNotifs = await apiService.markAllNotificationsRead();
       setNotifications(updatedNotifs);
@@ -287,43 +242,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTimeout(() => {
       setToast((current) => (current?.id === newToast.id ? null : current));
     }, 4000);
-  };
-
-  const resetDemoData = async () => {
-    try {
-      await apiService.resetDemo();
-    } catch (err) {
-      console.error('API demo reset error:', err);
-    }
-    const reset = clearDemoStorage();
-    setTemplates(reset.templates);
-    setApprovalRecords(reset.approvalRecords);
-    setRequestComments(reset.requestComments);
-    setReportComments(reset.reportComments || []);
-    setNotifications(reset.notifications);
-    setReports(reset.reports);
-    setCurrentUser(DEMO_USERS[0]);
-    setUsers(DEMO_USERS);
-    setApiDemoUserId(DEMO_USERS[0].id);
-    setActiveView('dashboard');
-    setSelectedCategory(null);
-    setSearchTerm('');
-    setIsAddModalOpen(false);
-    setIsChatDrawerOpen(false);
-    setIsProfileModalOpen(false);
-    setIsResetDemoModalOpen(false);
-    setDraftToEdit(null);
-    setSelectedTemplateForDetail(null);
-    setSelectedRequestForDrawer(null);
-    setSelectedApprovalForDrawer(null);
-    setSelectedTemplateForFill(null);
-    setSelectedReportForView(null);
-    setSelectedReportForSend(null);
-    setSelectedReportForReturn(null);
-    setSelectedReportForSign(null);
-    setReportToEdit(null);
-    syncFromApi(DEMO_USERS[0].id);
-    showToast('Demo data restored', 'success');
   };
 
   // Modal / Drawer Handlers
@@ -373,6 +291,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const openReportViewModal = (report: ReportInstance) => {
     setSelectedReportForView(report);
+    if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(report.id)) {
+      void reportService.get(report.id).then((detail) => setSelectedReportForView(detail)).catch((err) => console.warn('Failed to hydrate report detail:', err?.message ?? err));
+    }
   };
 
   const closeReportViewModal = () => {
@@ -380,6 +301,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const openSendReportModal = (report: ReportInstance) => {
+    // UUID reports must use the immutable template-version snapshot. Create/complete
+    // RPC responses are intentionally lightweight, so hydrate the authoritative
+    // detail before mounting the send modal.
+    if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(report.id)) {
+      setSelectedReportForSend(null);
+      void reportService.get(report.id)
+        .then((detail) => setSelectedReportForSend(detail))
+        .catch((err) => {
+          setSelectedReportForSend(null);
+          showToast(err?.message || 'Unable to load the historical report version before sending.', 'warning');
+        });
+      return;
+    }
     setSelectedReportForSend(report);
   };
 
@@ -419,54 +353,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsProfileModalOpen(false);
   };
 
-  const openResetDemoModal = () => {
-    setIsResetDemoModalOpen(true);
-  };
-
-  const closeResetDemoModal = () => {
-    setIsResetDemoModalOpen(false);
-  };
-
   const toggleChatDrawer = (open?: boolean) => {
     setIsChatDrawerOpen((prev) => (open !== undefined ? open : !prev));
   };
 
   // Centralized API Refresh Functions
   const refreshTemplates = async () => {
+    setTemplatesLoading(true); setTemplatesError(null);
     try {
-      const data = await apiService.getTemplates();
+      const data = await templateService.getTemplates();
       setTemplates(data);
     } catch (err: any) {
+      setTemplatesError(err.message || 'Unable to load report templates.');
       console.warn('Failed to refresh templates:', err.message);
-    }
+    } finally { setTemplatesLoading(false); }
   };
+  const clearTemplatesError = () => setTemplatesError(null);
 
   const refreshReports = async () => {
     try {
-      const data = await apiService.getReports();
+      const data = await reportService.list();
       setReports(data);
     } catch (err: any) {
       console.warn('Failed to refresh reports:', err.message);
     }
   };
+  useEffect(() => { void refreshReports(); }, []);
 
   const refreshNotifications = async () => {
     try {
-      const data = await apiService.getNotifications();
-      setNotifications(data);
+      if (isSupabasePrincipal(currentUser)) {
+        setNotifications(await reportService.listNotifications(currentUser.id));
+      } else {
+        setNotifications(await apiService.getNotifications());
+      }
     } catch (err: any) {
       console.warn('Failed to refresh notifications:', err.message);
     }
   };
-
-  const refreshCategories = async () => {
-    try {
-      const data = await apiService.getCategories();
-      setCategories(data);
-    } catch (err: any) {
-      console.warn('Failed to refresh categories:', err.message);
-    }
-  };
+  useEffect(() => { void refreshNotifications(); }, [currentUser.id]);
 
   // Save Draft Action for Report Template
   const saveTemplateDraft = async (
@@ -480,8 +405,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     existingId?: string
   ) => {
     try {
-      await apiService.saveTemplateDraft({ ...data, id: existingId });
-      await Promise.all([refreshTemplates(), refreshCategories()]);
+      const draft = { ...data, id: existingId, status: 'Draft', createdById: currentUser.id, createdByName: currentUser.name, createdByRole: currentUser.role, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), tags: data.tags ?? [] } as WidgetTemplate;
+      await templateService.saveDraft(draft);
+      await refreshTemplates();
       showToast('Report template saved as draft', 'info');
       closeAddTemplateModal();
     } catch (err: any) {
@@ -502,15 +428,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   ) => {
     try {
       // 1. Create or update template draft first
-      const savedTemplate = await apiService.saveTemplateDraft({ ...data, id: existingId });
+      const draft = { ...data, id: existingId, status: 'Draft', createdById: currentUser.id, createdByName: currentUser.name, createdByRole: currentUser.role, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), tags: data.tags ?? [] } as WidgetTemplate;
+      const savedTemplate = await templateService.saveDraft(draft);
       if (!savedTemplate || !savedTemplate.id) {
         throw new Error('Failed to create template draft prior to submission.');
       }
 
       // 2. Submit specific template by ID
-      const result = await apiService.submitTemplate(savedTemplate.id, data);
-      await Promise.all([refreshTemplates(), refreshNotifications(), refreshCategories()]);
-      if (result.status === 'Approved') {
+      const result = await templateService.submit(savedTemplate.id);
+      await refreshTemplates();
+      if ((result as any).status === 'approved' || (result as any).status === 'Approved') {
         showToast('Report template published directly to firm library!', 'success');
       } else {
         showToast(`Template request submitted to ${result.requestedApprovalFromName || 'approver'}`, 'success');
@@ -524,8 +451,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Approve Template Action
   const approveTemplate = async (templateId: string) => {
     try {
-      const tpl = await apiService.approveTemplate(templateId);
-      await Promise.all([refreshTemplates(), refreshNotifications(), refreshCategories()]);
+      const tpl = await templateService.approve(templateId) as any;
+      await refreshTemplates();
       showToast(`Approved "${tpl.name}". Now published firm-wide.`, 'success');
       closeApprovalDetail();
     } catch (err: any) {
@@ -536,8 +463,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Reject Template Action
   const rejectTemplate = async (templateId: string, reason: string) => {
     try {
-      const tpl = await apiService.rejectTemplate(templateId, reason);
-      await Promise.all([refreshTemplates(), refreshNotifications()]);
+      const tpl = await templateService.reject(templateId, reason) as any;
+      await refreshTemplates();
       showToast(`Rejected "${tpl.name}". Feedback sent to author.`, 'info');
       closeApprovalDetail();
     } catch (err: any) {
@@ -548,8 +475,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Claim Template Review Action
   const claimTemplateReview = async (templateId: string) => {
     try {
-      const tpl = await apiService.claimTemplateReview(templateId);
-      await Promise.all([refreshTemplates(), refreshNotifications()]);
+      const tpl = await templateService.claimReview(templateId) as any;
+      await refreshTemplates();
       showToast(`Claimed review for "${tpl.name}".`, 'success');
       return tpl;
     } catch (err: any) {
@@ -561,8 +488,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Add Template Comment Action
   const addRequestComment = async (templateId: string, message: string) => {
     try {
-      await apiService.addTemplateComment(templateId, message);
-      await Promise.all([refreshTemplates(), refreshNotifications()]);
+      await templateService.addComment(templateId, message);
+      await refreshTemplates();
       showToast('Comment posted', 'info');
     } catch (err: any) {
       showToast(err.message || 'Failed to post comment', 'warning');
@@ -578,7 +505,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const initialTitle = typeof payload === 'object' ? payload.title : undefined;
 
     try {
-      const newReport = await apiService.createReport(tplId, initialData, initialTitle);
+      const newReport = await reportService.create(tplId, initialData, initialTitle);
       await refreshReports();
       showToast(`Created report instance "${newReport.title}"`, 'success');
       return newReport;
@@ -594,19 +521,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     data: Record<string, string | number>,
     title?: string,
     markAsCompleted?: boolean
-  ) => {
+  ): Promise<ReportInstance | undefined> => {
     try {
       if (markAsCompleted) {
-        await apiService.markReportCompleted(reportId, data, title);
+        const completed = await reportService.complete(reportId, data, title);
         showToast('Report completed and marked ready for review', 'success');
+        await refreshReports(); closeFillReportModal(); return completed;
       } else {
-        await apiService.updateReport(reportId, data, title);
+        const saved = await reportService.saveDraft(reportId, data, title || 'Report');
         showToast('Report draft updates saved', 'info');
+        await refreshReports(); closeFillReportModal(); return saved;
       }
-      await refreshReports();
-      closeFillReportModal();
     } catch (err: any) {
       showToast(err.message || 'Failed to update report', 'warning');
+      throw err;
     }
   };
 
@@ -615,7 +543,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const report = reports.find((r) => r.id === reportId);
     if (!report) return;
     try {
-      await apiService.markReportCompleted(reportId, report.data, report.title);
+      await reportService.complete(reportId, report.data, report.title);
       await refreshReports();
       showToast('Report marked completed and ready to send', 'success');
     } catch (err: any) {
@@ -624,9 +552,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // Send Report Action
-  const sendReport = async (reportId: string, recipientUserId: string, senderNote?: string, signaturePayload?: any) => {
+  const sendReport = async (reportId: string, recipientUserId: string | string[], senderNote?: string, signaturePayload?: any) => {
     try {
-      const updated = await apiService.sendReport(reportId, recipientUserId, senderNote, signaturePayload);
+      if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(reportId)) {
+        const mappings = Array.isArray(signaturePayload) ? signaturePayload : [];
+        await reportService.send(reportId, Array.isArray(recipientUserId) ? recipientUserId : [recipientUserId], senderNote, mappings);
+        await refreshReports();
+        showToast('Report sent successfully.', 'success');
+        closeSendReportModal();
+        return;
+      }
+      const updated = await apiService.sendReport(reportId, Array.isArray(recipientUserId) ? recipientUserId[0] : recipientUserId, senderNote, signaturePayload);
       await Promise.all([refreshReports(), refreshNotifications()]);
       showToast(`Report sent to ${updated.sentToName} for review & signature`, 'success');
       closeSendReportModal();
@@ -639,6 +575,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Return Report Action
   const returnReport = async (reportId: string, feedback: string) => {
     try {
+      if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(reportId)) {
+        const report = reports.find((r) => r.id === reportId);
+        // Bind the action to the assignment in the report's active send cycle.
+        // A recipient may have historical assignments from prior cycles; using
+        // the first matching user can submit a stale assignment id.
+        const assignment = report?.assignments?.find((a) =>
+          a.recipientUserId === currentUser.id
+          && (!report.currentSendCycleId || a.sendCycleId === report.currentSendCycleId)
+          && a.assignmentStatus === 'pending'
+        );
+        if (!assignment) throw new Error('ASSIGNMENT_NOT_OWNED');
+        await reportService.returnReport(reportId, assignment.id, feedback);
+        await Promise.all([refreshReports(), refreshNotifications()]);
+        showToast('Report returned to author for changes', 'info');
+        closeReturnReportModal();
+        return;
+      }
       await apiService.returnReport(reportId, feedback);
       await Promise.all([refreshReports(), refreshNotifications()]);
       showToast('Report returned to author for changes', 'info');
@@ -651,18 +604,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Reject Report Action
   const rejectReport = async (reportId: string, reason: string) => {
     try {
+      if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(reportId)) {
+        const report = reports.find((r) => r.id === reportId);
+        const assignment = report?.assignments?.find((a) => a.recipientUserId === currentUser.id && (!report.currentSendCycleId || a.sendCycleId === report.currentSendCycleId) && a.assignmentStatus === 'pending');
+        if (!assignment) throw new Error('ASSIGNMENT_NOT_OWNED');
+        await reportService.rejectReport(reportId, assignment.id, reason);
+        await Promise.all([refreshReports(), refreshNotifications()]);
+        showToast('Report rejected', 'info');
+        closeRejectReportModal();
+        return;
+      }
       await apiService.rejectReport(reportId, reason);
       await Promise.all([refreshReports(), refreshNotifications()]);
       showToast('Report rejected', 'info');
       closeRejectReportModal();
     } catch (err: any) {
       showToast(err.message || 'Failed to reject report', 'warning');
+      throw err;
     }
   };
 
   // Sign Report Action
   const signReport = async (reportId: string, payload: any = {}) => {
     try {
+      if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(reportId)) {
+        const report = reports.find((r) => r.id === reportId);
+        const assignment = report?.assignments?.find((a) => a.recipientUserId === currentUser.id);
+        if (!assignment) throw new Error('ASSIGNMENT_NOT_OWNED');
+        await reportService.signReport(reportId, assignment.id, payload);
+        // RPC responses are intentionally partial; hydrate from the authoritative detail query.
+        try {
+          const detail = await reportService.get(reportId);
+          setReports((previous) => previous.map((item) => item.id === reportId ? detail : item));
+        } catch (refreshError: any) {
+          console.warn('Signature succeeded but report detail refresh failed:', refreshError?.message ?? refreshError);
+        }
+        await Promise.all([refreshReports(), refreshNotifications()]);
+        showToast('Report signed successfully', 'success');
+        closeSignReportModal();
+        return;
+      }
       const updated = await apiService.signReport(reportId, payload);
       await Promise.all([refreshReports(), refreshNotifications()]);
       const verId = updated.signature?.verificationId || updated.activeSignatures?.[updated.activeSignatures.length - 1]?.verificationId || 'SIG-VERIFIED';
@@ -693,6 +674,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const getCategoryTemplateCount = (catId: string) => {
     return templates.filter((t) => t.categoryId === catId && t.status === 'Approved').length;
   };
+  const getTotalCategoryCount = () => categories.length;
+  const getApprovedTemplateCategoryCount = () => new Set(
+    getApprovedTemplates().map((template) => template.categoryId).filter(Boolean)
+  ).size;
 
   const getPendingApprovalsForUser = () => {
     return templates.filter(
@@ -706,7 +691,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const getReportsAwaitingMyReview = () => {
     return reports.filter(
-      (r) => r.status === 'Sent' && r.sentToId === currentUser.id
+      (r) => r.status === 'Sent' && (r.assignments?.some((a) => a.recipientUserId === currentUser.id) || r.sentToId === currentUser.id)
     );
   };
 
@@ -729,6 +714,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         searchTerm,
         sidebarOpen,
         toast,
+        templatesLoading,
+        templatesError,
         isAddModalOpen,
         isChatDrawerOpen,
         draftToEdit,
@@ -743,8 +730,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         selectedReportForSign,
         reportToEdit,
         isProfileModalOpen,
-        isResetDemoModalOpen,
-        switchUser,
         setActiveView,
         setSelectedCategory,
         setSearchTerm,
@@ -752,7 +737,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         markNotificationRead,
         markAllNotificationsRead,
         showToast,
-        resetDemoData,
         openAddTemplateModal,
         closeAddTemplateModal,
         openTemplateDetail,
@@ -775,8 +759,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         closeSignReportModal,
         openProfileModal,
         closeProfileModal,
-        openResetDemoModal,
-        closeResetDemoModal,
         toggleChatDrawer,
         saveTemplateDraft,
         submitTemplateForApproval,
@@ -793,11 +775,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         signReport,
         addReportComment,
         refreshTemplates,
+        clearTemplatesError,
         refreshReports,
-        refreshAppData: () => syncFromApi(currentUser.id),
-        apiError,
         hasPermission,
         getCategoryTemplateCount,
+        getTotalCategoryCount,
+        getApprovedTemplateCategoryCount,
         getApprovedTemplates,
         getPendingApprovalsForUser,
         getMyRequestsForUser,

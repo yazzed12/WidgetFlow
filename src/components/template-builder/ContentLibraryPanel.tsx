@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { ContentLibraryItem } from '../../types';
-import { apiService } from '../../services/apiService';
+import { configurationService } from '../../features/configuration/services/configurationService';
 import {
   BookOpen,
   Search,
@@ -40,7 +40,7 @@ export const ContentLibraryPanel: React.FC<ContentLibraryPanelProps> = ({
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getAvailableContentItems();
+      const data = await configurationService.operationalContentLibrary();
       setItems(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error('Failed to load content library items:', err);

@@ -29,3 +29,7 @@ dist-ssr
 *.db-shm
 server/data/*.db*
 
+
+.env
+server/uploads/
+supabase/.temp/

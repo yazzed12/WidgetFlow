@@ -16,6 +16,7 @@ interface ReportSignatureModalProps {
     confirmationStatement: string;
   }) => Promise<void>;
   onClose: () => void;
+  isSupabaseReport?: boolean;
 }
 
 export const ReportSignatureModal: React.FC<ReportSignatureModalProps> = ({
@@ -25,6 +26,7 @@ export const ReportSignatureModal: React.FC<ReportSignatureModalProps> = ({
   confirmationStatement,
   onConfirm,
   onClose,
+  isSupabaseReport = false,
 }) => {
   const [profile, setProfile] = useState<UserSignatureProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,8 +35,10 @@ export const ReportSignatureModal: React.FC<ReportSignatureModalProps> = ({
 
   useEffect(() => {
     let isMounted = true;
-    apiService
-      .getUserSignatureProfile()
+    const profileRequest = isSupabaseReport
+      ? Promise.resolve<UserSignatureProfile | null>(null)
+      : apiService.getUserSignatureProfile();
+    profileRequest
       .then((prof) => {
         if (isMounted) {
           setProfile(
@@ -62,7 +66,7 @@ export const ReportSignatureModal: React.FC<ReportSignatureModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [currentUser]);
+  }, [currentUser, isSupabaseReport]);
 
   const defaultStatement =
     confirmationStatement ||

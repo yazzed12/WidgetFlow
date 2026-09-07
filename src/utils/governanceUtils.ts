@@ -1,4 +1,4 @@
-import { apiService } from '../services/apiService';
+import { configurationService } from '../features/configuration/services/configurationService';
 import type { GovernanceLevel } from '../shared/permissionCatalog';
 import type { User } from '../types';
 
@@ -9,34 +9,18 @@ export type TemplateSubmissionAction = {
 };
 
 export function resolveUserGovernanceLevel(user: User | null | undefined): GovernanceLevel {
-  if (!user) return 'Employee';
-  if (user.governanceLevel && user.governanceLevel !== 'None') {
-    return user.governanceLevel;
-  }
-  const roleName = user.role || (user as any).legacyRole || '';
-  if (roleName === 'Director' || user.roleKey === 'director') return 'Director';
-  if (roleName === 'Manager' || user.roleKey === 'manager') return 'Manager';
-  if (roleName === 'Employee' || user.roleKey === 'employee') return 'Employee';
-  if (roleName === 'Admin') return 'Director';
-  return 'Employee';
+  return user?.governanceLevel || 'None';
 }
 
 export async function fetchTemplateSubmissionAction(
   currentUser: User | GovernanceLevel | string | undefined
 ): Promise<TemplateSubmissionAction> {
-  const govLevel = typeof currentUser === 'object' && currentUser !== null
-    ? resolveUserGovernanceLevel(currentUser)
-    : (currentUser as string | undefined);
+  void currentUser;
 
   try {
-    const [config, systemConfig] = await Promise.all([
-      apiService.getGovernanceRouting(),
-      apiService.getSystemConfig().catch(() => null),
-    ]);
+    const systemConfig = await configurationService.effectiveConfig();
 
-    const isGlobalGovernanceEnabled =
-      systemConfig?.settings?.['template_governance'] !== false &&
-      systemConfig?.settings?.['workflow.template_governance'] !== false;
+    const isGlobalGovernanceEnabled = systemConfig.settings.template_governance !== false;
 
     if (!isGlobalGovernanceEnabled) {
       return {
@@ -46,10 +30,9 @@ export async function fetchTemplateSubmissionAction(
       };
     }
 
-    const levelKey = String(govLevel || 'Employee').toLowerCase();
-    const route = config?.routes?.[levelKey];
+    const route = systemConfig.governance;
 
-    if (!route || route.isDirectPublish || route.id === 'DIRECT_PUBLISH' || route.strategy === 'DIRECT_PUBLISH') {
+    if (route && (route.isDirectPublish || route.strategy === 'DIRECT_PUBLISH')) {
       return {
         buttonLabel: 'Publish',
         isDirectPublish: true,
@@ -63,18 +46,10 @@ export async function fetchTemplateSubmissionAction(
       helpText: "This template will be sent through your organization's configured approval route.",
     };
   } catch {
-    const levelKey = String(govLevel || 'Employee').toLowerCase();
-    if (levelKey === 'director') {
-      return {
-        buttonLabel: 'Publish',
-        isDirectPublish: true,
-        helpText: 'This template will be published immediately.',
-      };
-    }
     return {
       buttonLabel: 'Submit for Approval',
       isDirectPublish: false,
-      helpText: "This template will be sent through your organization's configured approval route.",
+      helpText: 'Submission routing could not be verified. The server will enforce the configured governance policy.',
     };
   }
 }

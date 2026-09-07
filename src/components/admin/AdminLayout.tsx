@@ -13,18 +13,11 @@ import { AdminCategories } from './AdminCategories';
 import { AdminSystemSettings } from './AdminSystemSettings';
 import { AdminAuditLog } from './AdminAuditLog';
 import { AdminRolesPermissions } from './AdminRolesPermissions';
-import { setApiDemoUserId } from '../../services/apiService';
 import type { AdminViewType } from '../../types';
 
 export const AdminLayout: React.FC = () => {
   const { currentUser } = useApp();
   const [activeTab, setActiveTab] = useState<AdminViewType>('overview');
-
-  React.useEffect(() => {
-    if (currentUser?.id) {
-      setApiDemoUserId(currentUser.id);
-    }
-  }, [currentUser?.id]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 text-slate-900 font-sans">

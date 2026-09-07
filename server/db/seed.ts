@@ -70,6 +70,11 @@ export function seedDatabase() {
 
   const transaction = db.transaction(() => {
     // Clear existing data safely
+    db.prepare('DELETE FROM auth_sessions').run();
+    db.prepare('DELETE FROM user_invitations').run();
+    db.prepare('DELETE FROM password_reset_tokens').run();
+    db.prepare('DELETE FROM user_credentials').run();
+    db.prepare('DELETE FROM auth_audit_log').run();
     db.prepare('DELETE FROM notifications').run();
     db.prepare('DELETE FROM digital_signatures').run();
     db.prepare('DELETE FROM report_audit_history').run();
@@ -215,9 +220,7 @@ export function seedDatabase() {
     insertSetting.run('governance.routing.manager', 'role-director', 'string', 'user-admin');
     insertSetting.run('governance.strategy.manager', 'SPECIFIC_USER', 'string', 'user-admin');
     insertSetting.run('governance.user.manager', 'user-director', 'string', 'user-admin');
-    insertSetting.run('governance.routing.director', 'DIRECT_PUBLISH', 'string', 'user-admin');
     insertSetting.run('governance.strategy.director', 'DIRECT_PUBLISH', 'string', 'user-admin');
-    insertSetting.run('governance.user.director', 'DIRECT_PUBLISH', 'string', 'user-admin');
 
     const insertAudit = db.prepare(`
       INSERT INTO admin_audit_log (id, actor_id, actor_name, actor_role, action, target, previous_value, new_value, timestamp)

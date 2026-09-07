@@ -1,6 +1,7 @@
 import React from 'react';
 import type { TemplateComponent } from '../../types/index.js';
 import { ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { getReportBusinessFieldKey } from '../../shared/signatureResolver';
 
 interface AcknowledgementControlProps {
   component: TemplateComponent;
@@ -19,7 +20,7 @@ export const AcknowledgementControl: React.FC<AcknowledgementControlProps> = ({
   disabled,
   error,
 }) => {
-  const fieldKey = component.key || component.id;
+  const fieldKey = getReportBusinessFieldKey(component) || '';
   const config = component.acknowledgementConfig || {};
   const statement =
     config.statementText ||
